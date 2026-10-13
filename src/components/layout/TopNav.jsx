@@ -2,11 +2,10 @@
 
 // ─────────────────────────────────────────────────────────────────
 // Top Navigation Bar — Shows on dashboard pages
-// Displays breadcrumb, search, and user quick actions
+// Displays page title and user quick profile (Search & Notifications removed)
 // ─────────────────────────────────────────────────────────────────
 
 import { usePathname } from 'next/navigation';
-import { Bell, Search } from 'lucide-react';
 
 /**
  * Generates a human-readable page title from the current path.
@@ -21,7 +20,6 @@ function getPageTitle(pathname) {
     settings: 'Settings',
     admin: 'Administration',
     users: 'User Management',
-    organizations: 'Organizations',
   };
 
   // Use the last meaningful segment
@@ -41,26 +39,9 @@ export default function TopNav({ user }) {
           <h1 className="text-lg font-semibold text-navy-900">{pageTitle}</h1>
         </div>
 
-        {/* Right — Actions */}
+        {/* Right — User avatar */}
         <div className="flex items-center gap-3">
-          {/* Search (placeholder for Phase 3+) */}
-          <button
-            className="p-2 rounded-xl text-gray-400 hover:text-navy-700 hover:bg-gray-100 transition-colors"
-            title="Search invoices"
-          >
-            <Search className="w-4.5 h-4.5" />
-          </button>
-
-          {/* Notifications */}
-          <button
-            className="relative p-2 rounded-xl text-gray-400 hover:text-navy-700 hover:bg-gray-100 transition-colors"
-            title="Notifications"
-          >
-            <Bell className="w-4.5 h-4.5" />
-          </button>
-
-          {/* User avatar */}
-          <div className="flex items-center gap-2 pl-2 border-l border-gray-200 ml-1">
+          <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-500 to-brand-700
                             flex items-center justify-center text-white text-xs font-bold shadow-sm">
               {(user?.name || user?.email || 'U').charAt(0).toUpperCase()}

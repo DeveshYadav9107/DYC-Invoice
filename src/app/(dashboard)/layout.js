@@ -19,11 +19,6 @@ export default async function DashboardLayout({ children }) {
 
   const { user } = result;
 
-  // If user hasn't completed their profile (no name), redirect to complete signup
-  if (!user.name && user.role !== 'ADMIN') {
-    redirect('/signup/complete');
-  }
-
   // Serialize user data for client components
   const serializedUser = {
     id: user.id,

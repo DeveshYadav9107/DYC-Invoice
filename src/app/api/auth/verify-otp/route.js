@@ -42,34 +42,54 @@ export async function POST(request) {
     const isAdmin = adminEmail && normalizedEmail === adminEmail;
 
     if (!user) {
-      // Provision new user
+      // Provision user and personal workspace
+      const org = await prisma.organization.create({
+        data: {
+          name: 'My Organization',
+          slug: `org-${Date.now().toString().slice(-6)}`,
+        },
+      });
+
       user = await prisma.user.create({
         data: {
           email: normalizedEmail,
-          name: '',
+          name: normalizedEmail.split('@')[0],
           role: isAdmin ? 'ADMIN' : 'CLIENT',
+          organizationId: org.id,
           emailVerifiedAt: new Date(),
         },
         include: { organization: true },
       });
-    } else if (!user.emailVerifiedAt) {
-      // Update email verified timestamp
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: { emailVerifiedAt: new Date() },
-        include: { organization: true },
-      });
+    } else {
+      const updateData = {};
+      if (!user.emailVerifiedAt) {
+        updateData.emailVerifiedAt = new Date();
+      }
+      if (!user.organizationId) {
+        const org = await prisma.organization.create({
+          data: {
+            name: `${user.name || 'My'} Organization`,
+            slug: `org-${Date.now().toString().slice(-6)}`,
+          },
+        });
+        updateData.organizationId = org.id;
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: updateData,
+          include: { organization: true },
+        });
+      }
     }
 
     // Establish persistent session
     await createSession(user.id);
 
-    // Check if user needs to complete profile (has name and organization)
-    const needsProfile = !user.name || (!user.organizationId && user.role !== 'ADMIN');
-
     return apiResponse({
       success: true,
-      needsProfile,
+      needsProfile: false,
       user: {
         id: user.id,
         email: user.email,

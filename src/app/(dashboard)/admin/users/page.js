@@ -9,7 +9,7 @@ import prisma from '@/lib/prisma';
 import Card, { CardHeader, CardBody } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import { formatDate } from '@/lib/utils';
-import { Users, ChevronLeft } from 'lucide-react';
+import Icon from '@/components/ui/Icon';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +38,7 @@ export default async function AdminUsersPage() {
           href="/admin"
           className="p-2 rounded-xl text-gray-500 hover:text-navy-900 hover:bg-gray-100 transition-colors"
         >
-          <ChevronLeft className="w-5 h-5" />
+          <Icon name="ChevronLeft" className="w-5 h-5" />
         </Link>
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-navy-900 tracking-tight">

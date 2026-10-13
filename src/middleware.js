@@ -23,8 +23,8 @@ export function middleware(request) {
     return NextResponse.next();
   }
 
-  // If user is authenticated and visits login page, redirect to dashboard
-  if (hasSessionCookie && pathname === '/login') {
+  // If user is authenticated and visits login/signup, redirect to dashboard
+  if (hasSessionCookie && (pathname === '/login' || pathname === '/signup')) {
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 

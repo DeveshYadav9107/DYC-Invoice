@@ -269,9 +269,9 @@ export default function InvoiceUploadPage() {
                   <Button
                     onClick={handleUploadAll}
                     loading={uploading}
-                    icon={Upload}
                     className="w-full"
                   >
+                    <Upload className="w-4 h-4 mr-1.5" />
                     {uploading ? 'Processing uploads...' : `Upload ${selectedFiles.length} File${selectedFiles.length > 1 ? 's' : ''}`}
                   </Button>
                 </div>
@@ -329,8 +329,9 @@ export default function InvoiceUploadPage() {
                   Upload More Files
                 </Button>
                 <Link href="/invoices" className="flex-1">
-                  <Button variant="primary" className="w-full" icon={ArrowRight}>
+                  <Button variant="primary" className="w-full">
                     Go to Invoices
+                    <ArrowRight className="w-4 h-4 ml-1.5" />
                   </Button>
                 </Link>
               </div>

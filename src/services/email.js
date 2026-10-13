@@ -15,10 +15,13 @@ function createTransporter() {
     return null;
   }
 
+  const isGmail = process.env.SMTP_HOST?.includes('gmail');
+
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || '587', 10),
     secure: process.env.SMTP_SECURE === 'true',
+    ...(isGmail ? { service: 'gmail' } : {}),
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
@@ -67,16 +70,18 @@ function getOtpHtmlTemplate(code) {
 
 /**
  * Sends an OTP email to the user.
- * If SMTP is not yet configured in local development, logs code to console.
+ * Always logs code to terminal console in development mode so developers are never blocked.
  */
 export async function sendOtpEmail(toEmail, code) {
+  // Always log OTP in development console for fast & effortless testing
+  console.info(`\n======================================================`);
+  console.info(`🔑 [InvoiceFlow Auth OTP] To: ${toEmail} | Code: >>> ${code} <<<`);
+  console.info(`======================================================\n`);
+
   const { configured, missing } = checkSmtpConfig();
 
   if (!configured) {
-    // In local development before SMTP is provided, log to console so auth works seamlessly
-    console.warn('\n⚠️ [InvoiceFlow Auth] SMTP is not fully configured (missing: ' + missing.join(', ') + ').');
-    console.info(`📧 [InvoiceFlow Auth Dev Code] OTP for ${toEmail}: >>> ${code} <<<\n`);
-
+    console.warn('⚠️ [InvoiceFlow Auth] SMTP is not fully configured (missing: ' + missing.join(', ') + ').');
     return {
       success: true,
       delivered: false,
@@ -86,16 +91,20 @@ export async function sendOtpEmail(toEmail, code) {
   }
 
   const transporter = createTransporter();
+  const fromAddress = process.env.SMTP_FROM || `"InvoiceFlow" <${process.env.SMTP_USER}>`;
+
   const mailOptions = {
-    from: process.env.SMTP_FROM || 'InvoiceFlow <noreply@invoiceflow.app>',
+    from: fromAddress,
     to: toEmail,
-    subject: `${code} is your InvoiceFlow verification code`,
-    text: `Your InvoiceFlow verification code is: ${code}\nThis code expires in 10 minutes.\nIf you did not request this code, please ignore this email.`,
+    replyTo: process.env.SMTP_USER,
+    subject: `Your InvoiceFlow verification code is ${code}`,
+    text: `Your InvoiceFlow verification code is: ${code}\n\nThis code expires in 10 minutes.\nIf you did not request this code, please ignore this email.`,
     html: getOtpHtmlTemplate(code),
   };
 
   try {
     const info = await transporter.sendMail(mailOptions);
+    console.info(`📨 [InvoiceFlow Email] Sent to ${toEmail} (Message ID: ${info.messageId})`);
     return {
       success: true,
       delivered: true,

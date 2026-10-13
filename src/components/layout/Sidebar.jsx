@@ -17,7 +17,6 @@ import {
   Download,
   Settings,
   Users,
-  Building2,
   LogOut,
   ChevronLeft,
   Menu,
@@ -50,11 +49,6 @@ const navItems = [
     href: '/exports',
     icon: Download,
   },
-  {
-    label: 'Settings',
-    href: '/settings',
-    icon: Settings,
-  },
 ];
 
 const adminItems = [
@@ -71,9 +65,9 @@ const adminItems = [
     adminOnly: true,
   },
   {
-    label: 'Organizations',
-    href: '/admin/organizations',
-    icon: Building2,
+    label: 'Settings',
+    href: '/settings',
+    icon: Settings,
     adminOnly: true,
   },
 ];
@@ -133,6 +127,19 @@ export default function Sidebar({ user }) {
     );
   };
 
+  // For Admin: Settings is located under Administration section
+  // For Client: Settings is located in Main navigation so clients can also modify their details
+  const currentNavItems = isAdmin
+    ? navItems
+    : [
+        ...navItems,
+        {
+          label: 'Settings',
+          href: '/settings',
+          icon: Settings,
+        },
+      ];
+
   const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* Logo + Collapse */}
@@ -164,7 +171,7 @@ export default function Sidebar({ user }) {
               Main
             </p>
           )}
-          {navItems.map(renderNavLink)}
+          {currentNavItems.map(renderNavLink)}
         </div>
 
         {/* Admin nav */}

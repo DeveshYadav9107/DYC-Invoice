@@ -46,11 +46,11 @@ export default function CreateExportButton({ validatedCount }) {
   return (
     <Button
       variant="primary"
-      icon={Download}
       loading={loading}
       disabled={validatedCount === 0}
       onClick={handleExport}
     >
+      <Download className="w-4 h-4 mr-1.5" />
       Export {validatedCount} Validated Invoice{validatedCount === 1 ? '' : 's'}
     </Button>
   );

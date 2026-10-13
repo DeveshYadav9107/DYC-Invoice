@@ -4,7 +4,9 @@
 // Button Component — Interactive buttons with animations & loading
 // ─────────────────────────────────────────────────────────────────
 
+import React from 'react';
 import { Loader2 } from 'lucide-react';
+import Icon from './Icon';
 import { cn } from '@/lib/utils';
 
 const variantClasses = {
@@ -32,10 +34,27 @@ export default function Button({
   size = 'md',
   loading = false,
   disabled = false,
-  icon: Icon,
+  icon,
   className = '',
   ...props
 }) {
+  const renderIcon = () => {
+    if (loading) return <Loader2 className="w-4 h-4 animate-spin text-current" />;
+    if (!icon) return null;
+    if (React.isValidElement(icon)) return icon;
+    if (typeof icon === 'string') {
+      return <Icon name={icon} className="w-4 h-4 flex-shrink-0" />;
+    }
+    if (
+      typeof icon === 'function' ||
+      (typeof icon === 'object' && icon !== null && ('render' in icon || '$$typeof' in icon))
+    ) {
+      const IconComponent = icon;
+      return <IconComponent className="w-4 h-4 flex-shrink-0" />;
+    }
+    return null;
+  };
+
   return (
     <button
       disabled={disabled || loading}
@@ -48,11 +67,7 @@ export default function Button({
       )}
       {...props}
     >
-      {loading ? (
-        <Loader2 className="w-4 h-4 animate-spin text-current" />
-      ) : Icon ? (
-        <Icon className="w-4 h-4 flex-shrink-0" />
-      ) : null}
+      {renderIcon()}
       {children}
     </button>
   );

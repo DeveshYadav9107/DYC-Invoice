@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────────
 // API Route: /api/exports
-// GET: List export batches for organization
+// GET: List export batches for organization (or system-wide for admins)
 // POST: Generate new CSV export batch for validated invoices
 // ─────────────────────────────────────────────────────────────────
 
@@ -18,9 +18,14 @@ export async function GET() {
     }
 
     const { user } = sessionData;
+    const isAdmin = user.role === 'ADMIN';
+
+    const where = isAdmin
+      ? {}
+      : { organizationId: user.organizationId || undefined };
 
     const batches = await prisma.exportBatch.findMany({
-      where: { organizationId: user.organizationId || undefined },
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         createdBy: {
@@ -44,20 +49,24 @@ export async function POST(request) {
     }
 
     const { user } = sessionData;
-    if (!user.organizationId) {
-      return apiError('Organization membership required.', 403);
-    }
+    const isAdmin = user.role === 'ADMIN';
 
     const body = await request.json().catch(() => ({}));
-    const requestedIds = body.invoiceIds; // Array of specific IDs or null for all validated
+    const requestedIds = body.invoiceIds; // Array of specific IDs or empty for all validated
 
     const where = {
-      organizationId: user.organizationId,
-      validationStatus: 'VALIDATED', // STRICT REQUIREMENT: Only validated invoices can be exported
+      validationStatus: 'VALIDATED', // Only validated invoices can be exported
     };
 
     if (Array.isArray(requestedIds) && requestedIds.length > 0) {
       where.id = { in: requestedIds };
+      if (!isAdmin && user.organizationId) {
+        where.organizationId = user.organizationId;
+      }
+    } else if (!isAdmin) {
+      if (user.organizationId) {
+        where.organizationId = user.organizationId;
+      }
     }
 
     const invoices = await prisma.invoice.findMany({
@@ -79,19 +88,32 @@ export async function POST(request) {
     const csvContent = generateInvoicesCsv(invoices);
     const csvBuffer = Buffer.from(csvContent, 'utf-8');
 
-    // Save CSV to blob storage
+    // Determine target organization ID for storage and batch record
+    let targetOrgId = invoices[0]?.organizationId || user.organizationId;
+    if (!targetOrgId) {
+      const firstOrg = await prisma.organization.findFirst();
+      targetOrgId = firstOrg?.id;
+    }
+    if (!targetOrgId) {
+      const newOrg = await prisma.organization.create({
+        data: { name: 'Default Enterprise', slug: 'default-enterprise' },
+      });
+      targetOrgId = newOrg.id;
+    }
+
+    // Save CSV to blob/local storage
     const fileName = `export-${Date.now()}.csv`;
     const uploadResult = await uploadInvoiceFile(
       csvBuffer,
       fileName,
       'text/csv',
-      user.organizationId
+      targetOrgId
     );
 
     // Record export batch in database
     const batch = await prisma.exportBatch.create({
       data: {
-        organizationId: user.organizationId,
+        organizationId: targetOrgId,
         createdById: user.id,
         status: 'COMPLETED',
         rowCount: invoices.length,
@@ -100,15 +122,18 @@ export async function POST(request) {
       },
     });
 
-    return apiResponse({
-      success: true,
-      message: `Export batch created with ${invoices.length} validated invoices.`,
-      batch: {
-        id: batch.id,
-        rowCount: batch.rowCount,
-        createdAt: batch.createdAt,
+    return apiResponse(
+      {
+        success: true,
+        message: `Export batch created with ${invoices.length} validated invoices.`,
+        batch: {
+          id: batch.id,
+          rowCount: batch.rowCount,
+          createdAt: batch.createdAt,
+        },
       },
-    }, 201);
+      201
+    );
   } catch (error) {
     console.error('Error creating export batch:', error);
     return apiError(error.message || 'Failed to generate export batch.', 500);

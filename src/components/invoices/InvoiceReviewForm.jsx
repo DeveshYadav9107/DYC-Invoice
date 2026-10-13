@@ -127,19 +127,19 @@ export default function InvoiceReviewForm({ invoice }) {
             <Button
               variant="danger"
               size="sm"
-              icon={Trash2}
               loading={deleting}
               onClick={handleDelete}
             >
+              <Trash2 className="w-3.5 h-3.5 mr-1" />
               Delete
             </Button>
             <Button
               variant="primary"
               size="sm"
-              icon={Save}
               loading={saving}
               onClick={handleSave}
             >
+              <Save className="w-3.5 h-3.5 mr-1" />
               Save & Revalidate
             </Button>
           </div>

@@ -4,12 +4,14 @@
 // EmptyState Component — Engaging zero-data state displays
 // ─────────────────────────────────────────────────────────────────
 
+import React from 'react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import Button from './Button';
+import Icon from './Icon';
 
 export default function EmptyState({
-  icon: Icon,
+  icon,
   title,
   description,
   actionLabel,
@@ -18,6 +20,38 @@ export default function EmptyState({
   actionIcon,
   className = '',
 }) {
+  const renderMainIcon = () => {
+    if (!icon) return null;
+    if (React.isValidElement(icon)) return icon;
+    if (typeof icon === 'string') {
+      return <Icon name={icon} className="w-7 h-7" />;
+    }
+    if (
+      typeof icon === 'function' ||
+      (typeof icon === 'object' && icon !== null && ('render' in icon || '$$typeof' in icon))
+    ) {
+      const IconComponent = icon;
+      return <IconComponent className="w-7 h-7" />;
+    }
+    return null;
+  };
+
+  const renderActionIcon = () => {
+    if (!actionIcon) return null;
+    if (React.isValidElement(actionIcon)) return actionIcon;
+    if (typeof actionIcon === 'string') {
+      return <Icon name={actionIcon} className="w-4 h-4" />;
+    }
+    if (
+      typeof actionIcon === 'function' ||
+      (typeof actionIcon === 'object' && actionIcon !== null && ('render' in actionIcon || '$$typeof' in actionIcon))
+    ) {
+      const ActionIconComponent = actionIcon;
+      return <ActionIconComponent className="w-4 h-4" />;
+    }
+    return null;
+  };
+
   return (
     <div
       className={cn(
@@ -25,9 +59,9 @@ export default function EmptyState({
         className
       )}
     >
-      {Icon && (
+      {icon && (
         <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-50 to-brand-100/60 border border-brand-200/60 flex items-center justify-center text-brand-600 mb-5 shadow-sm">
-          <Icon className="w-7 h-7" />
+          {renderMainIcon()}
         </div>
       )}
       <h3 className="text-lg font-semibold text-navy-900 mb-2">{title}</h3>
@@ -38,10 +72,16 @@ export default function EmptyState({
       {actionLabel && (
         actionHref ? (
           <Link href={actionHref}>
-            <Button icon={actionIcon}>{actionLabel}</Button>
+            <Button>
+              {renderActionIcon()}
+              {actionLabel}
+            </Button>
           </Link>
         ) : (
-          <Button onClick={onAction} icon={actionIcon}>{actionLabel}</Button>
+          <Button onClick={onAction}>
+            {renderActionIcon()}
+            {actionLabel}
+          </Button>
         )
       )}
     </div>

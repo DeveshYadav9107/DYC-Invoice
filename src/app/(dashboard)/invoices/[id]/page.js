@@ -9,15 +9,9 @@ import { requireSession } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import InvoiceReviewForm from '@/components/invoices/InvoiceReviewForm';
 import Card, { CardHeader, CardBody } from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
+import Icon from '@/components/ui/Icon';
+import InvoiceDetailActions from '@/components/invoices/InvoiceDetailActions';
 import { formatFileSize, formatDate } from '@/lib/utils';
-import {
-  ChevronLeft,
-  Download,
-  ExternalLink,
-  FileText,
-  FileCheck,
-} from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,6 +69,12 @@ export default async function InvoiceDetailPage({ params }) {
       unitPrice: item.unitPrice ? Number(item.unitPrice) : null,
       taxAmount: item.taxAmount ? Number(item.taxAmount) : null,
       totalAmount: item.totalAmount ? Number(item.totalAmount) : null,
+      createdAt: item.createdAt.toISOString(),
+    })),
+    validationIssues: invoice.validationIssues.map((issue) => ({
+      ...issue,
+      resolvedAt: issue.resolvedAt ? issue.resolvedAt.toISOString() : null,
+      createdAt: issue.createdAt.toISOString(),
     })),
   };
 
@@ -91,7 +91,7 @@ export default async function InvoiceDetailPage({ params }) {
             className="p-2 rounded-xl text-gray-500 hover:text-navy-900 hover:bg-gray-100 transition-colors"
             title="Back to invoices"
           >
-            <ChevronLeft className="w-5 h-5" />
+            <Icon name="ChevronLeft" className="w-5 h-5" />
           </Link>
           <div>
             <div className="flex items-center gap-2">
@@ -105,23 +105,7 @@ export default async function InvoiceDetailPage({ params }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 pl-10 sm:pl-0">
-          <a
-            href={fileUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex"
-          >
-            <Button variant="secondary" size="sm" icon={ExternalLink}>
-              Open in Tab
-            </Button>
-          </a>
-          <a href={fileUrl} download={invoice.originalFileName} className="inline-flex">
-            <Button variant="secondary" size="sm" icon={Download}>
-              Download Original
-            </Button>
-          </a>
-        </div>
+        <InvoiceDetailActions fileUrl={fileUrl} originalFileName={invoice.originalFileName} />
       </div>
 
       {/* ─── Two-Column Split Review Grid ──────────────────────── */}
@@ -130,7 +114,7 @@ export default async function InvoiceDetailPage({ params }) {
         <Card className="sticky top-20 overflow-hidden bg-navy-950/5">
           <CardHeader className="bg-white flex flex-row items-center justify-between py-3 px-5">
             <div className="flex items-center gap-2 text-xs font-semibold text-navy-800">
-              <FileText className="w-4 h-4 text-brand-600" />
+              <Icon name="FileText" className="w-4 h-4 text-brand-600" />
               <span>Original Document Viewer</span>
             </div>
             <span className="text-[11px] text-gray-400 font-mono">

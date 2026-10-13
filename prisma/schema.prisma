@@ -79,6 +79,12 @@ model User {
   id              String    @id @default(cuid())
   name            String
   email           String    @unique
+  phoneNumber     String?
+  passwordHash    String?
+  dateOfBirth     DateTime?
+  gender          String?
+  address         String?
+  designation     String?
   role            UserRole  @default(CLIENT)
   organizationId  String?
   emailVerifiedAt DateTime?
