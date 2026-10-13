@@ -1,0 +1,32 @@
+# InvoiceFlow — Dependencies
+node_modules/
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+
+# Next.js
+.next/
+out/
+
+# Prisma
+prisma/*.db
+
+# Build
+build/
+dist/
+
+# Debug
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/

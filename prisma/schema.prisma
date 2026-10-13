@@ -1,0 +1,287 @@
+// ─────────────────────────────────────────────────────────────────
+// InvoiceFlow — Prisma Schema
+// PostgreSQL on Neon with full invoice-processing data model
+// ─────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  CLIENT
+}
+
+enum ProcessingStatus {
+  UPLOADED
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ClassificationStatus {
+  PENDING
+  INVOICE_CANDIDATE
+  NOT_AN_INVOICE
+  UNCERTAIN
+}
+
+enum ValidationStatus {
+  PENDING
+  VALIDATED
+  NEEDS_REVIEW
+  REJECTED
+}
+
+enum ExportStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum IssueSeverity {
+  ERROR
+  WARNING
+  INFO
+}
+
+// ─── Models ──────────────────────────────────────────────────────
+
+/// Organizations group users and their invoices. 
+/// Data is isolated per organization.
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  invoices      Invoice[]
+  exportBatches ExportBatch[]
+  auditLogs     AuditLog[]
+
+  @@index([slug])
+}
+
+/// Users authenticate via passwordless email OTP.
+/// Each user belongs to an organization and has a role.
+model User {
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  role            UserRole  @default(CLIENT)
+  organizationId  String?
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  uploadedInvoices Invoice[]    @relation("UploadedBy")
+  sessions        Session[]
+  validationRuns  ValidationRun[]
+  exportBatches   ExportBatch[]  @relation("CreatedBy")
+  auditLogs       AuditLog[]     @relation("Actor")
+
+  @@index([email])
+  @@index([organizationId])
+}
+
+/// Stores hashed OTP challenges for email authentication.
+/// Only the hash is stored, never the plaintext OTP.
+model OtpChallenge {
+  id              String    @id @default(cuid())
+  normalizedEmail String
+  codeHash        String
+  expiresAt       DateTime
+  attempts        Int       @default(0)
+  maxAttempts     Int       @default(5)
+  consumedAt      DateTime?
+  resendAt        DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([normalizedEmail])
+  @@index([expiresAt])
+}
+
+/// Database-backed sessions with hashed tokens.
+/// Enables secure session management and revocation.
+model Session {
+  id               String    @id @default(cuid())
+  userId           String
+  sessionTokenHash String    @unique
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionTokenHash])
+  @@index([expiresAt])
+}
+
+/// The core invoice entity. Stores upload metadata, processing states,
+/// extracted data, classification evidence, and validation results.
+/// Monetary values use Decimal for precision.
+model Invoice {
+  id                    String              @id @default(cuid())
+  organizationId        String
+  uploadedById          String
+  originalFileName      String
+  storageKey            String              @unique
+  mimeType              String
+  fileSize              Int
+  fileChecksum          String?
+  
+  // Processing pipeline states
+  processingStatus      ProcessingStatus    @default(UPLOADED)
+  classificationStatus  ClassificationStatus @default(PENDING)
+  validationStatus      ValidationStatus    @default(PENDING)
+  
+  // Extracted invoice fields (nullable — not every invoice has all fields)
+  invoiceNumber         String?
+  normalizedInvoiceNumber String?
+  invoiceDate           DateTime?
+  dueDate               DateTime?
+  vendorName            String?
+  normalizedVendorName  String?
+  vendorAddress         String?
+  vendorTaxNumber       String?
+  customerName          String?
+  customerAddress       String?
+  purchaseOrderNumber   String?
+  currency              String?
+  
+  // Monetary fields — use Decimal for precision
+  subtotal              Decimal?            @db.Decimal(18, 4)
+  taxAmount             Decimal?            @db.Decimal(18, 4)
+  discountAmount        Decimal?            @db.Decimal(18, 4)
+  additionalCharges     Decimal?            @db.Decimal(18, 4)
+  totalAmount           Decimal?            @db.Decimal(18, 4)
+  
+  // Extraction data preservation
+  originalExtractedData Json?
+  correctedData         Json?
+  extractionConfidence  Float?
+  classificationEvidence Json?
+  
+  // Error tracking
+  processingError       String?
+  
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedBy      User             @relation("UploadedBy", fields: [uploadedById], references: [id], onDelete: Cascade)
+  lineItems       InvoiceLineItem[]
+  validationIssues ValidationIssue[]
+  validationRuns  ValidationRun[]
+
+  @@index([organizationId])
+  @@index([uploadedById])
+  @@index([processingStatus])
+  @@index([validationStatus])
+  @@index([classificationStatus])
+  @@index([invoiceDate])
+  @@index([normalizedVendorName])
+  @@index([normalizedInvoiceNumber])
+  @@index([organizationId, normalizedVendorName, normalizedInvoiceNumber])
+  @@index([createdAt])
+}
+
+/// Individual line items extracted from an invoice.
+model InvoiceLineItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  description String?
+  quantity    Decimal? @db.Decimal(18, 4)
+  unitPrice   Decimal? @db.Decimal(18, 4)
+  taxAmount   Decimal? @db.Decimal(18, 4)
+  totalAmount Decimal? @db.Decimal(18, 4)
+  createdAt   DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+/// Specific validation issues found during business validation.
+model ValidationIssue {
+  id         String        @id @default(cuid())
+  invoiceId  String
+  code       String
+  field      String?
+  severity   IssueSeverity
+  message    String
+  resolvedAt DateTime?
+  createdAt  DateTime      @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([code])
+  @@index([severity])
+}
+
+/// Records each validation run for audit purposes.
+model ValidationRun {
+  id            String   @id @default(cuid())
+  invoiceId     String
+  performedById String?
+  result        Json
+  createdAt     DateTime @default(now())
+
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  performedBy User?   @relation(fields: [performedById], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+}
+
+/// Tracks CSV export batches — which invoices were exported, by whom.
+model ExportBatch {
+  id             String       @id @default(cuid())
+  organizationId String
+  createdById    String
+  status         ExportStatus @default(PENDING)
+  rowCount       Int          @default(0)
+  invoiceIds     String[]
+  storageKey     String?
+  createdAt      DateTime     @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("CreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([createdById])
+  @@index([createdAt])
+}
+
+/// Audit log for tracking important actions across the system.
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String?
+  actorId        String?
+  entityType     String
+  entityId       String?
+  action         String
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actor        User?         @relation("Actor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
