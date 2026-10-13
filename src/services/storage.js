@@ -7,9 +7,12 @@ import { BlobServiceClient } from '@azure/storage-blob';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 const CONTAINER_NAME = process.env.AZURE_STORAGE_CONTAINER || 'invoices';
-const LOCAL_STORAGE_DIR = path.join(process.cwd(), '.storage', 'invoices');
+const LOCAL_STORAGE_DIR = process.env.VERCEL
+  ? path.join(os.tmpdir(), 'storage', 'invoices')
+  : path.join(process.cwd(), '.storage', 'invoices');
 
 /**
  * Checks if Azure Blob Storage connection string is configured.

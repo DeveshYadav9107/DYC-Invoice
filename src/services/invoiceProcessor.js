@@ -13,7 +13,7 @@ import { validateInvoiceData, normalizeKey } from '@/services/invoiceValidation'
  * Executes the complete invoice processing lifecycle for an uploaded document.
  * @param {string} invoiceId - Database ID of the uploaded Invoice
  */
-export async function processUploadedInvoice(invoiceId) {
+export async function processUploadedInvoice(invoiceId, fileBuffer = null) {
   try {
     // 1. Mark as PROCESSING
     const invoice = await prisma.invoice.update({
@@ -21,8 +21,12 @@ export async function processUploadedInvoice(invoiceId) {
       data: { processingStatus: 'PROCESSING' },
     });
 
-    // 2. Fetch document buffer from storage
-    const { buffer } = await getInvoiceFileBuffer(invoice.storageKey);
+    // 2. Fetch document buffer from storage if not already provided
+    let buffer = fileBuffer;
+    if (!buffer) {
+      const storageResult = await getInvoiceFileBuffer(invoice.storageKey);
+      buffer = storageResult.buffer;
+    }
 
     // 3. Azure AI Document Intelligence Extraction
     const { extracted, confidence, raw } = await analyzeInvoiceDocument(buffer);

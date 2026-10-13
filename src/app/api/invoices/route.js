@@ -20,6 +20,8 @@ const ALLOWED_MIME_TYPES = [
 
 const MAX_FILE_SIZE = (parseInt(process.env.UPLOAD_MAX_SIZE_MB || '10', 10)) * 1024 * 1024;
 
+export const maxDuration = 60;
+
 // ─── GET: Fetch Invoices ──────────────────────────────────────────
 export async function GET(request) {
   try {
@@ -156,15 +158,29 @@ export async function POST(request) {
       },
     });
 
-    // Fire processing pipeline in background
-    processUploadedInvoice(invoice.id).catch((err) => {
+    // Run processing pipeline synchronously so Vercel does not terminate container
+    try {
+      await processUploadedInvoice(invoice.id, buffer);
+    } catch (err) {
       console.error(`Failed to process invoice ${invoice.id}:`, err);
+    }
+
+    // Retrieve updated invoice status
+    const processedInvoice = await prisma.invoice.findUnique({
+      where: { id: invoice.id },
+      select: {
+        id: true,
+        originalFileName: true,
+        fileSize: true,
+        processingStatus: true,
+        validationStatus: true,
+      },
     });
 
     return apiResponse({
       success: true,
-      message: 'Invoice uploaded successfully and queued for processing.',
-      invoice: {
+      message: 'Invoice uploaded and processed successfully.',
+      invoice: processedInvoice || {
         id: invoice.id,
         fileName: invoice.originalFileName,
         fileSize: invoice.fileSize,

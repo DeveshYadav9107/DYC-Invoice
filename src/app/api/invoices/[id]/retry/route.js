@@ -9,6 +9,8 @@ import { processUploadedInvoice } from '@/services/invoiceProcessor';
 import { createAuditLog } from '@/services/auditLog';
 import { apiResponse, apiError } from '@/lib/utils';
 
+export const maxDuration = 60;
+
 export async function POST(request, { params }) {
   try {
     const sessionData = await requireSession();
@@ -32,19 +34,21 @@ export async function POST(request, { params }) {
       return apiError('Access denied.', 403);
     }
 
-    // Set status to QUEUED
+    // Set status to PROCESSING
     await prisma.invoice.update({
       where: { id: invoiceId },
       data: {
-        processingStatus: 'QUEUED',
+        processingStatus: 'PROCESSING',
         processingError: null,
       },
     });
 
-    // Run processing asynchronously in background
-    processUploadedInvoice(invoiceId).catch((err) => {
+    // Run processing pipeline awaiting to prevent Vercel container freeze
+    try {
+      await processUploadedInvoice(invoiceId);
+    } catch (err) {
       console.error(`Retry processing failed for ${invoiceId}:`, err);
-    });
+    }
 
     await createAuditLog({
       organizationId: invoice.organizationId,
@@ -56,7 +60,7 @@ export async function POST(request, { params }) {
 
     return apiResponse({
       success: true,
-      message: 'Invoice re-queued for processing.',
+      message: 'Invoice re-processed successfully.',
     });
   } catch (error) {
     console.error('Error retrying invoice processing:', error);
