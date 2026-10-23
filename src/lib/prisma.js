@@ -17,3 +17,4 @@ const prisma =
 globalForPrisma.prisma = prisma;
 
 export default prisma;
+
