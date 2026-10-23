@@ -3,12 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "test": "vitest run",
-    "worker": "node src/workers/invoiceProcessor.js",
-    "postinstall": "prisma generate"
+    "dev": "concurrently -n \"backend,frontend\" -c \"blue,green\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "test:backend": "npm --prefix backend run test",
+    "start:backend": "npm --prefix backend run start",
+    "worker:backend": "npm --prefix backend run worker",
+    "postinstall": "npm --prefix backend run prisma:generate"
   },
   "prisma": {
     "seed": "node prisma/seed.mjs"
@@ -46,6 +48,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "concurrently": "^10.0.6",
     "vitest": "^5.0.4"
   }
 }

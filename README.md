@@ -1,11 +1,17 @@
-# InvoiceFlow — AI-Powered Invoice Verification & CSV Export SaaS
+# InvoiceFlow — AI-Powered Invoice Verification & CSV Export
 
-[![Next.js](https://img.shields.io/badge/Next.js-16.4-black.svg)](https://nextjs.org/)
+[![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61DAFB.svg)](https://vitejs.dev/)
+[![Backend](https://img.shields.io/badge/Backend-Node.js%20%2B%20Express-339933.svg)](https://expressjs.com/)
+[![Database](https://img.shields.io/badge/Database-Neon%20PostgreSQL-00E599.svg)](https://neon.tech/)
 [![Prisma](https://img.shields.io/badge/Prisma-6.19-2D3748.svg)](https://www.prisma.io/)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC.svg)](https://tailwindcss.com/)
-[![Tests](https://img.shields.io/badge/Tests-Vitest%20Passed-success.svg)](https://vitest.dev/)
+[![Tests](https://img.shields.io/badge/Tests-Vitest%2012%2F12%20Passing-success.svg)](https://vitest.dev/)
 
 **InvoiceFlow** is an enterprise-grade invoice extraction, validation, and spreadsheet export web application. Users can upload invoice documents (PDF, PNG, JPEG, TIFF), let Azure AI extract and structure the data, automatically check business rules and mathematical integrity, review flagged discrepancies in a two-column editor, and download formula-safe CSV exports.
+
+The application is structured as a decoupled architecture:
+- **Frontend**: Single-page application built with **React**, **Vite**, **React Router**, **Tailwind CSS**, **Motion for React**, and **Recharts**.
+- **Backend**: REST API built with **Node.js**, **Express**, **Prisma ORM**, **Neon PostgreSQL**, **Azure AI Document Intelligence**, and **Azure Blob Storage**.
 
 ---
 
@@ -14,7 +20,7 @@
 1. **Passwordless Email OTP Authentication**:
    - Secure 6-digit OTP delivery via SMTP (Nodemailer).
    - HMAC SHA-256 challenge hashing with attempt limiting (max 5) and resend cooldowns (60s).
-   - Database-backed sessions with hashed session tokens stored in secure, HTTP-only cookies.
+   - Database-backed sessions with hashed session tokens stored in secure, HTTP-only cookies (`DYC_SESSION`).
    - Development fallback: logs verification codes directly to the server console if SMTP credentials are not yet configured.
 
 2. **Azure AI Document Intelligence Extraction**:
@@ -48,131 +54,179 @@
 
 | Layer | Technologies |
 |---|---|
-| **Frontend** | Next.js 16 (App Router), React 19, Tailwind CSS, Lucide React, Motion |
-| **Backend** | Next.js Route Handlers (JavaScript / JSX only, no TypeScript) |
+| **Frontend** | React 19, Vite, React Router 7, Tailwind CSS, Lucide React, Motion for React, Recharts |
+| **Backend** | Node.js (ES Modules), Express 4, Prisma ORM 6, REST Architecture |
 | **Database** | PostgreSQL (Neon Serverless) + Prisma ORM 6 |
-| **Authentication** | Passwordless Email OTP, Nodemailer, HTTP-only Lax Cookies |
+| **Authentication** | Passwordless Email OTP, Nodemailer, HTTP-only Secure Cookies |
 | **Document AI** | Azure AI Document Intelligence (`@azure/ai-form-recognizer`) |
 | **Storage** | Azure Blob Storage (`@azure/storage-blob`) with local disk dev fallback |
 | **Spreadsheet** | `csv-stringify` with RFC 4180 BOM & DDE formula protection |
-| **Testing** | Vitest 5 |
+| **Testing** | Vitest (12 passing tests across Auth, Validation, CSV, and API routes) |
 
 ---
 
-## 📁 Project Structure
+## 📁 Repository Structure
 
 ```
 DYC-Invoice/
-├── .env.example              # Environment variables template
-├── prisma/
-│   ├── schema.prisma         # Multi-tenant PostgreSQL database schema
-│   └── seed.mjs              # Seed script for initial organization & users
-├── src/
-│   ├── app/
-│   │   ├── layout.js         # Root HTML shell & fonts
-│   │   ├── globals.css       # Design system styles
-│   │   ├── page.js           # Smart redirect to /login or /dashboard
-│   │   ├── (auth)/
-│   │   │   ├── login/page.js # Split-screen OTP login interface
-│   │   │   └── signup/complete/page.js # Onboarding profile completion
-│   │   ├── (dashboard)/
-│   │   │   ├── layout.js     # Protected dashboard shell & session gate
-│   │   │   ├── dashboard/page.js       # Live KPI metrics & recent invoices
-│   │   │   ├── invoices/page.js        # Filterable invoices directory
-│   │   │   ├── invoices/upload/page.js # Drag-and-drop file upload
-│   │   │   ├── invoices/[id]/page.js   # Two-column document review page
-│   │   │   ├── exports/page.js         # CSV export generator & history
-│   │   │   ├── settings/page.js        # Tenant profile & integration check
-│   │   │   └── admin/                  # Superadmin tenant telemetry
-│   │   └── api/
-│   │       ├── auth/                   # request-otp, verify-otp, logout, me
-│   │       ├── invoices/               # Upload, list, update, file preview
-│   │       └── exports/                # CSV generation & streaming downloads
-│   ├── components/
-│   │   ├── ui/               # Badge, Button, Card, EmptyState
-│   │   ├── layout/           # Sidebar, TopNav, DashboardShell
-│   │   ├── invoices/         # InvoiceReviewForm
-│   │   └── exports/          # CreateExportButton
-│   ├── lib/
-│   │   ├── auth.js           # Session management & token hashing
-│   │   ├── prisma.js         # Prisma client singleton
-│   │   ├── rate-limit.js     # In-memory sliding window rate limiter
-│   │   ├── env.js            # Environment validation module
-│   │   └── utils.js          # Currency, dates, file sizes, slugs
-│   └── services/
-│       ├── otp.js            # Cryptographic OTP generation & verification
-│       ├── email.js          # Nodemailer email dispatcher
-│       ├── storage.js        # Azure Blob Storage + local storage fallback
-│       ├── invoiceValidation.js # Business rules & Decimal arithmetic engine
-│       ├── invoiceProcessor.js  # Pipeline coordinator
-│       └── csvExport.js      # Formula-protected CSV export generator
-├── tests/                    # Automated Vitest unit test suites
-└── vitest.config.mjs         # Vitest configuration
+├── backend/                  # Node.js + Express REST API
+│   ├── prisma/               # Prisma schema & database migrations
+│   │   ├── schema.prisma     # Neon PostgreSQL schema
+│   │   └── seed.mjs          # Database seed script
+│   ├── src/
+│   │   ├── controllers/      # Route controllers (auth, invoices, exports, etc.)
+│   │   ├── middleware/       # Auth, error, upload, rate limit middleware
+│   │   ├── routes/           # Express routers (/api/auth, /api/invoices, etc.)
+│   │   ├── services/         # Business logic (Azure AI, storage, CSV, validation)
+│   │   ├── utils/            # Prisma client, API responses, env helpers
+│   │   ├── app.js            # Express app configuration & middleware
+│   │   └── server.js         # HTTP server entry point (port 5000)
+│   ├── tests/                # Vitest unit & integration test suites
+│   ├── render.yaml           # Render backend deployment configuration
+│   └── package.json
+│
+├── frontend/                 # React + Vite Single-Page Application
+│   ├── src/
+│   │   ├── api/              # Centralized fetch API client with credentials
+│   │   ├── components/
+│   │   │   ├── dashboard/    # ActivityChart, ValidationChart, DashboardActions
+│   │   │   ├── exports/      # CreateExportButton, ExportDownloadButton
+│   │   │   ├── invoices/     # InvoiceReviewForm, ExportButtons, Action bars
+│   │   │   ├── layout/       # Sidebar, TopNav, DashboardShell
+│   │   │   ├── settings/     # EditSettingsModal
+│   │   │   └── ui/           # Button, Card, Badge, Modal, EmptyState, Icon
+│   │   ├── context/          # AuthContext (user session, login, logout)
+│   │   ├── pages/            # Page views (Auth, Dashboard, Invoices, Upload, Review, etc.)
+│   │   │   └── admin/        # AdminOverview, AdminUsers, AdminOrganizations
+│   │   ├── routes/           # AppRoutes with ProtectedRoute & AdminRoute guards
+│   │   ├── utils/            # Formatting helpers (currency, dates, file sizes)
+│   │   ├── App.jsx           # Root router wrapper
+│   │   ├── main.jsx          # DOM entry point
+│   │   └── index.css         # Tailwind & theme styles
+│   ├── vercel.json           # Vercel deployment & rewrite configuration
+│   └── package.json
+│
+├── package.json              # Monorepo root scripts (runs backend & frontend concurrently)
+└── README.md
 ```
 
 ---
 
 ## 🚀 Getting Started
 
-### 1. Prerequisites
-- **Node.js**: v20 or higher
-- **PostgreSQL**: Neon account (or local PostgreSQL database)
+### Prerequisites
 
-### 2. Environment Configuration
-Copy `.env.example` to `.env.local`:
+- **Node.js** >= 18.0.0
+- **npm** >= 9.0.0
+- **Neon PostgreSQL Database** (already configured in `.env`)
 
-```bash
-cp .env.example .env.local
-```
+### 1. Installation
 
-Fill in your configuration values:
-- `DATABASE_URL` & `DIRECT_URL`: Connection string from Neon Console
-- `AUTH_SECRET`: Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
-- `DOCUMENT_INTELLIGENCE_ENDPOINT` & `KEY`: From Azure Portal (optional in dev)
-- `AZURE_STORAGE_CONNECTION_STRING`: From Azure Storage Account (optional in dev)
-- `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`: Your email provider credentials (optional in dev)
-
-> **Development Note**: If Azure AI or SMTP credentials are not yet supplied, InvoiceFlow operates in local dev mode. Verification codes are printed directly to the terminal, documents are stored in `.storage/invoices/`, and sample extraction structures are provided.
-
-### 3. Database Migration & Seeding
-Push the schema to your Neon database:
+Install dependencies across the workspace:
 
 ```bash
-npx prisma db push
+# Install root dependencies
+npm install
+
+# Install backend dependencies
+cd backend && npm install && npm run prisma:generate && cd ..
+
+# Install frontend dependencies
+cd frontend && npm install && cd ..
 ```
 
-Populate initial seed organization and accounts:
+### 2. Configure Environment Variables
 
-```bash
-npx prisma db seed
+The backend requires a `.env` file inside `backend/.env` (copied from `.env.local` or based on `backend/.env.example`):
+
+```ini
+PORT=5000
+NODE_ENV=development
+FRONTEND_URL=http://localhost:5173
+SESSION_SECRET=your-32-character-session-secret
+
+# Database
+DATABASE_URL="postgresql://user:pass@ep-example.us-east-2.aws.neon.tech/neondb?sslmode=require"
+
+# Azure AI Document Intelligence
+DOCUMENT_INTELLIGENCE_ENDPOINT="https://example.cognitiveservices.azure.com/"
+DOCUMENT_INTELLIGENCE_KEY="your-key"
+
+# Azure Blob Storage
+AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=example;AccountKey=...;EndpointSuffix=core.windows.net"
+AZURE_STORAGE_CONTAINER_NAME="invoices"
+
+# SMTP
+SMTP_HOST="smtp.gmail.com"
+SMTP_PORT=587
+SMTP_USER="your-email@gmail.com"
+SMTP_PASS="your-password"
+SMTP_FROM="InvoiceFlow <noreply@invoiceflow.com>"
 ```
 
-### 4. Running the Dev Server
+### 3. Run Locally
+
+To run both the backend API and frontend concurrently:
 
 ```bash
 npm run dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000) to access the application.
+- **Frontend**: [http://localhost:5173](http://localhost:5173)
+- **Backend API**: [http://localhost:5000](http://localhost:5000)
+- **Health Check**: [http://localhost:5000/api/health](http://localhost:5000/api/health)
 
-### 5. Running Automated Tests
-
-```bash
-npm run test
-```
-
-### 6. Production Build
+You can also run them independently in separate terminals:
 
 ```bash
-npm run build
-npm start
+# Terminal 1: Run Express Backend
+npm run dev:backend
+
+# Terminal 2: Run React Frontend
+npm run dev:frontend
 ```
 
 ---
 
-## 🔒 Security Best Practices
+## 🧪 Testing
 
-- **Zero Plaintext Secrets**: OTP codes are hashed via HMAC-SHA256 with server secrets before storage. Raw session tokens are never stored in the database.
-- **Tenant Isolation**: Queries strictly filter by `organizationId`. Invoices cannot be viewed across tenant boundaries.
-- **Safe CSV Generation**: All exported cells starting with sensitive macro symbols (`=`, `+`, `-`, `@`) are escaped to prevent spreadsheet execution vulnerabilities.
-- **Rate Limiting**: Authentication endpoints are rate-limited per email and IP to guard against brute-force attempts.
+Run backend unit and integration test suites:
+
+```bash
+npm run test:backend
+```
+
+Tests cover:
+- OTP generation, validation, attempt tracking, and session token creation
+- Arithmetic cross-validation with rounding tolerance
+- Formula injection defense and CSV formatting
+- Express API authentication guards and health check endpoints
+
+---
+
+## 🚢 Production Deployment
+
+### Backend on Render
+
+1. Create a **Web Service** on [Render](https://render.com).
+2. Connect your repository.
+3. Configure settings:
+   - **Root Directory**: `backend`
+   - **Environment**: `Node`
+   - **Build Command**: `npm install && npm run prisma:generate`
+   - **Start Command**: `npm start`
+   - **Health Check Path**: `/api/health`
+4. Set the environment variables in the Render Dashboard (matching `backend/.env.example`).
+   - Set `FRONTEND_URL` to your Vercel deployment URL (e.g. `https://dyc-invoice.vercel.app`).
+   - Set `NODE_ENV=production`.
+
+Alternatively, deploy using the included `backend/render.yaml` blueprint.
+
+### Frontend on Vercel
+
+1. Import your repository into [Vercel](https://vercel.com).
+2. Set the **Root Directory** to `frontend`.
+3. Framework Preset: **Vite**.
+4. In Environment Variables, set:
+   - `VITE_API_BASE_URL`: URL of your Render backend (e.g. `https://dyc-invoice-api.onrender.com`).
+5. The included `frontend/vercel.json` automatically manages client-side SPA routing rewrites.
