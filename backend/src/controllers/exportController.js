@@ -32,7 +32,7 @@ export async function getExportBatches(req, res) {
       prisma.invoice.count({
         where: {
           ...where,
-          validationStatus: 'VALIDATED',
+          validationStatus: { in: ['VALIDATED', 'MATCHED'] },
         },
       }),
     ]);
@@ -55,7 +55,7 @@ export async function createExportBatch(req, res) {
     const requestedIds = body.invoiceIds;
 
     const where = {
-      validationStatus: 'VALIDATED',
+      validationStatus: { in: ['VALIDATED', 'MATCHED'] },
     };
 
     if (Array.isArray(requestedIds) && requestedIds.length > 0) {
@@ -71,7 +71,7 @@ export async function createExportBatch(req, res) {
 
     const invoices = await prisma.invoice.findMany({
       where,
-      include: { lineItems: true },
+      include: { lineItems: true, vendor: true, purchaseOrder: true },
       orderBy: { invoiceDate: 'desc' },
     });
 

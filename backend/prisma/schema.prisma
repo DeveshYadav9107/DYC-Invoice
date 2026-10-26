@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────
 // InvoiceFlow — Prisma Schema
 // PostgreSQL on Neon with full invoice-processing data model
+// Extended with PO + Goods Receipt (GR) 3-Way Matching Engine
 // ─────────────────────────────────────────────────────────────────
 
 generator client {
@@ -40,6 +41,23 @@ enum ValidationStatus {
   VALIDATED
   NEEDS_REVIEW
   REJECTED
+  NEEDS_PO_SELECTION
+  MATCHED
+  MISMATCH
+}
+
+enum POStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_RECEIVED
+  FULLY_RECEIVED
+  CLOSED
+  CANCELLED
+}
+
+enum GRStatus {
+  SUBMITTED
+  CANCELLED
 }
 
 enum ExportStatus {
@@ -59,16 +77,20 @@ enum IssueSeverity {
 /// Organizations group users and their invoices. 
 /// Data is isolated per organization.
 model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String          @id @default(cuid())
+  name           String
+  slug           String          @unique
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
-  users         User[]
-  invoices      Invoice[]
-  exportBatches ExportBatch[]
-  auditLogs     AuditLog[]
+  users          User[]
+  invoices       Invoice[]
+  exportBatches  ExportBatch[]
+  auditLogs      AuditLog[]
+  vendors        Vendor[]
+  items          Item[]
+  purchaseOrders PurchaseOrder[]
+  goodsReceipts  GoodsReceipt[]
 
   @@index([slug])
 }
@@ -76,34 +98,36 @@ model Organization {
 /// Users authenticate via passwordless email OTP.
 /// Each user belongs to an organization and has a role.
 model User {
-  id              String    @id @default(cuid())
-  name            String
-  email           String    @unique
-  phoneNumber     String?
-  passwordHash    String?
-  dateOfBirth     DateTime?
-  gender          String?
-  address         String?
-  designation     String?
-  role            UserRole  @default(CLIENT)
-  organizationId  String?
-  emailVerifiedAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                     String                @id @default(cuid())
+  name                   String
+  email                  String                @unique
+  phoneNumber            String?
+  passwordHash           String?
+  dateOfBirth            DateTime?
+  gender                 String?
+  address                String?
+  designation            String?
+  role                   UserRole              @default(CLIENT)
+  organizationId         String?
+  emailVerifiedAt        DateTime?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
 
-  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  uploadedInvoices Invoice[]    @relation("UploadedBy")
-  sessions        Session[]
-  validationRuns  ValidationRun[]
-  exportBatches   ExportBatch[]  @relation("CreatedBy")
-  auditLogs       AuditLog[]     @relation("Actor")
+  organization           Organization?         @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  uploadedInvoices       Invoice[]             @relation("UploadedBy")
+  sessions               Session[]
+  validationRuns         ValidationRun[]
+  exportBatches          ExportBatch[]         @relation("CreatedBy")
+  auditLogs              AuditLog[]            @relation("Actor")
+  createdPOs             PurchaseOrder[]       @relation("POCreatedBy")
+  receivedGRs            GoodsReceipt[]        @relation("GRReceivedBy")
+  performedVerifications InvoiceVerification[] @relation("VerificationPerformedBy")
 
   @@index([email])
   @@index([organizationId])
 }
 
 /// Stores hashed OTP challenges for email authentication.
-/// Only the hash is stored, never the plaintext OTP.
 model OtpChallenge {
   id              String    @id @default(cuid())
   normalizedEmail String
@@ -120,7 +144,6 @@ model OtpChallenge {
 }
 
 /// Database-backed sessions with hashed tokens.
-/// Enables secure session management and revocation.
 model Session {
   id               String    @id @default(cuid())
   userId           String
@@ -136,65 +159,232 @@ model Session {
   @@index([expiresAt])
 }
 
-/// The core invoice entity. Stores upload metadata, processing states,
-/// extracted data, classification evidence, and validation results.
-/// Monetary values use Decimal for precision.
+/// Master record for vendors. Managed by Admin.
+model Vendor {
+  id             String          @id @default(cuid())
+  organizationId String
+  vendorCode     String
+  name           String
+  normalizedName String
+  taxNumber      String?
+  contactPerson  String?
+  email          String?
+  phone          String?
+  address        String?
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  purchaseOrders PurchaseOrder[]
+  invoices       Invoice[]
+
+  @@unique([organizationId, vendorCode])
+  @@index([organizationId])
+  @@index([normalizedName])
+  @@index([taxNumber])
+}
+
+/// Master record for items/products. Managed by Admin.
+model Item {
+  id             String              @id @default(cuid())
+  organizationId String
+  itemCode       String
+  name           String
+  description    String?
+  uom            String              @default("PCS")
+  unitPrice      Decimal?            @db.Decimal(18, 4)
+  taxRate        Decimal?            @db.Decimal(5, 2)
+  isActive       Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  poLines        PurchaseOrderLine[]
+  invoiceLines   InvoiceLineItem[]
+
+  @@unique([organizationId, itemCode])
+  @@index([organizationId])
+  @@index([itemCode])
+  @@index([name])
+}
+
+/// Transactional record for Purchase Orders created by Admin.
+model PurchaseOrder {
+  id                   String                @id @default(cuid())
+  organizationId       String
+  poNumber             String
+  vendorId             String
+  createdById          String?
+  status               POStatus              @default(DRAFT)
+  orderDate            DateTime              @default(now())
+  expectedDeliveryDate DateTime?
+  currency             String                @default("USD")
+  subtotal             Decimal               @db.Decimal(18, 4)
+  taxAmount            Decimal               @default(0) @db.Decimal(18, 4)
+  discountAmount       Decimal               @default(0) @db.Decimal(18, 4)
+  additionalCharges    Decimal               @default(0) @db.Decimal(18, 4)
+  totalAmount          Decimal               @db.Decimal(18, 4)
+  notes                String?
+  terms                String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vendor               Vendor                @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  createdBy            User?                 @relation("POCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  lines                PurchaseOrderLine[]
+  goodsReceipts        GoodsReceipt[]
+  invoices             Invoice[]
+  verifications        InvoiceVerification[]
+
+  @@unique([organizationId, poNumber])
+  @@index([organizationId])
+  @@index([vendorId])
+  @@index([status])
+  @@index([poNumber])
+  @@index([orderDate])
+}
+
+/// Line items belonging to a Purchase Order.
+model PurchaseOrderLine {
+  id              String             @id @default(cuid())
+  purchaseOrderId String
+  lineNumber      Int
+  itemId          String?
+  itemCode        String?
+  description     String
+  uom             String             @default("PCS")
+  orderedQuantity Decimal            @db.Decimal(18, 4)
+  unitPrice       Decimal            @db.Decimal(18, 4)
+  discountPercent Decimal?           @db.Decimal(5, 2)
+  taxRate         Decimal?           @db.Decimal(5, 2)
+  lineTotal       Decimal            @db.Decimal(18, 4)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  purchaseOrder   PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  item            Item?              @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  grLines         GoodsReceiptLine[]
+  invoiceLines    InvoiceLineItem[]
+
+  @@index([purchaseOrderId])
+  @@index([itemId])
+}
+
+/// Goods Receipt (GR/GRN) recorded against a PO upon physical delivery.
+model GoodsReceipt {
+  id                 String             @id @default(cuid())
+  organizationId     String
+  grnNumber          String
+  purchaseOrderId    String
+  receivedById       String?
+  receiptDate        DateTime           @default(now())
+  deliveryNoteNumber String?
+  carrierReference   String?
+  remarks            String?
+  status             GRStatus           @default(SUBMITTED)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  purchaseOrder      PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  receivedBy         User?              @relation("GRReceivedBy", fields: [receivedById], references: [id], onDelete: SetNull)
+  lines              GoodsReceiptLine[]
+
+  @@unique([organizationId, grnNumber])
+  @@index([organizationId])
+  @@index([purchaseOrderId])
+  @@index([receiptDate])
+  @@index([grnNumber])
+}
+
+/// Individual line receipts recording actual accepted & rejected quantities.
+model GoodsReceiptLine {
+  id               String            @id @default(cuid())
+  goodsReceiptId   String
+  poLineId         String
+  receivedQuantity Decimal           @db.Decimal(18, 4)
+  acceptedQuantity Decimal           @db.Decimal(18, 4)
+  rejectedQuantity Decimal           @default(0) @db.Decimal(18, 4)
+  rejectionReason  String?
+  createdAt        DateTime          @default(now())
+
+  goodsReceipt     GoodsReceipt      @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  poLine           PurchaseOrderLine @relation(fields: [poLineId], references: [id], onDelete: Restrict)
+
+  @@index([goodsReceiptId])
+  @@index([poLineId])
+}
+
+/// The core invoice entity. Extended with Vendor and PO relations,
+/// and Three-Way verification status & summary.
 model Invoice {
-  id                    String              @id @default(cuid())
-  organizationId        String
-  uploadedById          String
-  originalFileName      String
-  storageKey            String              @unique
-  mimeType              String
-  fileSize              Int
-  fileChecksum          String?
+  id                      String                @id @default(cuid())
+  organizationId          String
+  uploadedById            String
+  originalFileName        String
+  storageKey              String                @unique
+  mimeType                String
+  fileSize                Int
+  fileChecksum            String?
   
-  // Processing pipeline states
-  processingStatus      ProcessingStatus    @default(UPLOADED)
-  classificationStatus  ClassificationStatus @default(PENDING)
-  validationStatus      ValidationStatus    @default(PENDING)
+  // Processing & verification states
+  processingStatus        ProcessingStatus      @default(UPLOADED)
+  classificationStatus    ClassificationStatus  @default(PENDING)
+  validationStatus        ValidationStatus      @default(PENDING)
   
-  // Extracted invoice fields (nullable — not every invoice has all fields)
-  invoiceNumber         String?
+  // Relations to Master & Transactional records
+  vendorId                String?
+  purchaseOrderId         String?
+  
+  // Extracted invoice fields
+  invoiceNumber           String?
   normalizedInvoiceNumber String?
-  invoiceDate           DateTime?
-  dueDate               DateTime?
-  vendorName            String?
-  normalizedVendorName  String?
-  vendorAddress         String?
-  vendorTaxNumber       String?
-  customerName          String?
-  customerAddress       String?
-  purchaseOrderNumber   String?
-  currency              String?
+  invoiceDate             DateTime?
+  dueDate                 DateTime?
+  vendorName              String?
+  normalizedVendorName    String?
+  vendorAddress           String?
+  vendorTaxNumber         String?
+  customerName            String?
+  customerAddress         String?
+  purchaseOrderNumber     String?
+  currency                String?
   
   // Monetary fields — use Decimal for precision
-  subtotal              Decimal?            @db.Decimal(18, 4)
-  taxAmount             Decimal?            @db.Decimal(18, 4)
-  discountAmount        Decimal?            @db.Decimal(18, 4)
-  additionalCharges     Decimal?            @db.Decimal(18, 4)
-  totalAmount           Decimal?            @db.Decimal(18, 4)
+  subtotal                Decimal?              @db.Decimal(18, 4)
+  taxAmount               Decimal?              @db.Decimal(18, 4)
+  discountAmount          Decimal?              @db.Decimal(18, 4)
+  additionalCharges       Decimal?              @db.Decimal(18, 4)
+  totalAmount             Decimal?              @db.Decimal(18, 4)
   
-  // Extraction data preservation
-  originalExtractedData Json?
-  correctedData         Json?
-  extractionConfidence  Float?
-  classificationEvidence Json?
+  // Extraction data preservation & 3-way matching breakdown
+  originalExtractedData   Json?
+  correctedData           Json?
+  extractionConfidence    Float?
+  classificationEvidence  Json?
+  verificationSummary     Json?
   
   // Error tracking
-  processingError       String?
+  processingError         String?
   
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
 
-  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  uploadedBy      User             @relation("UploadedBy", fields: [uploadedById], references: [id], onDelete: Cascade)
-  lineItems       InvoiceLineItem[]
-  validationIssues ValidationIssue[]
-  validationRuns  ValidationRun[]
+  organization            Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedBy              User                  @relation("UploadedBy", fields: [uploadedById], references: [id], onDelete: Cascade)
+  vendor                  Vendor?               @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  purchaseOrder           PurchaseOrder?        @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  lineItems               InvoiceLineItem[]
+  validationIssues        ValidationIssue[]
+  validationRuns          ValidationRun[]
+  verifications           InvoiceVerification[]
 
   @@index([organizationId])
   @@index([uploadedById])
+  @@index([vendorId])
+  @@index([purchaseOrderId])
   @@index([processingStatus])
   @@index([validationStatus])
   @@index([classificationStatus])
@@ -205,23 +395,32 @@ model Invoice {
   @@index([createdAt])
 }
 
-/// Individual line items extracted from an invoice.
+/// Individual line items extracted from an invoice, optionally mapped to a PO line and Item.
 model InvoiceLineItem {
-  id          String   @id @default(cuid())
-  invoiceId   String
-  description String?
-  quantity    Decimal? @db.Decimal(18, 4)
-  unitPrice   Decimal? @db.Decimal(18, 4)
-  taxAmount   Decimal? @db.Decimal(18, 4)
-  totalAmount Decimal? @db.Decimal(18, 4)
-  createdAt   DateTime @default(now())
+  id            String             @id @default(cuid())
+  invoiceId     String
+  poLineId      String?
+  itemId        String?
+  itemCode      String?
+  description   String?
+  uom           String?
+  quantity      Decimal?           @db.Decimal(18, 4)
+  unitPrice     Decimal?           @db.Decimal(18, 4)
+  taxAmount     Decimal?           @db.Decimal(18, 4)
+  totalAmount   Decimal?           @db.Decimal(18, 4)
+  matchedStatus String?
+  createdAt     DateTime           @default(now())
 
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice       Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  poLine        PurchaseOrderLine? @relation(fields: [poLineId], references: [id], onDelete: SetNull)
+  item          Item?              @relation(fields: [itemId], references: [id], onDelete: SetNull)
 
   @@index([invoiceId])
+  @@index([poLineId])
+  @@index([itemId])
 }
 
-/// Specific validation issues found during business validation.
+/// Specific validation issues found during 3-way verification.
 model ValidationIssue {
   id         String        @id @default(cuid())
   invoiceId  String
@@ -232,7 +431,7 @@ model ValidationIssue {
   resolvedAt DateTime?
   createdAt  DateTime      @default(now())
 
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice    Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
   @@index([code])
@@ -247,10 +446,37 @@ model ValidationRun {
   result        Json
   createdAt     DateTime @default(now())
 
-  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  performedBy User?   @relation(fields: [performedById], references: [id], onDelete: SetNull)
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  performedBy   User?    @relation(fields: [performedById], references: [id], onDelete: SetNull)
 
   @@index([invoiceId])
+}
+
+/// Records each verification run with complete three-way matching comparison details.
+model InvoiceVerification {
+  id               String           @id @default(cuid())
+  invoiceId        String
+  purchaseOrderId  String?
+  performedById    String?
+  overallStatus    ValidationStatus
+  vendorMatch      Boolean          @default(false)
+  poMatch          Boolean          @default(false)
+  quantityMatch    Boolean          @default(false)
+  priceMatch       Boolean          @default(false)
+  taxMatch         Boolean          @default(false)
+  duplicateCheck   Boolean          @default(true)
+  details          Json
+  discrepancyCount Int              @default(0)
+  overrideReason   String?
+  createdAt        DateTime         @default(now())
+
+  invoice          Invoice          @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  purchaseOrder    PurchaseOrder?   @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  performedBy      User?            @relation("VerificationPerformedBy", fields: [performedById], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([purchaseOrderId])
+  @@index([createdAt])
 }
 
 /// Tracks CSV export batches — which invoices were exported, by whom.
@@ -264,8 +490,8 @@ model ExportBatch {
   storageKey     String?
   createdAt      DateTime     @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy    User         @relation("CreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      User         @relation("CreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([createdById])
@@ -274,17 +500,17 @@ model ExportBatch {
 
 /// Audit log for tracking important actions across the system.
 model AuditLog {
-  id             String   @id @default(cuid())
+  id             String        @id @default(cuid())
   organizationId String?
   actorId        String?
   entityType     String
   entityId       String?
   action         String
   metadata       Json?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime      @default(now())
 
-  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  actor        User?         @relation("Actor", fields: [actorId], references: [id], onDelete: SetNull)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actor          User?         @relation("Actor", fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([actorId])

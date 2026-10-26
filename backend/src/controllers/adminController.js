@@ -10,11 +10,23 @@ import { successResponse, errorResponse } from '../utils/apiResponse.js';
  */
 export async function getAdminOverview(req, res) {
   try {
-    const [totalUsers, totalOrgs, totalInvoices, totalExports, recentUsers] = await Promise.all([
+    const [
+      totalUsers,
+      totalOrgs,
+      totalInvoices,
+      totalExports,
+      totalVendors,
+      totalPurchaseOrders,
+      totalGoodsReceipts,
+      recentUsers,
+    ] = await Promise.all([
       prisma.user.count(),
       prisma.organization.count(),
       prisma.invoice.count(),
       prisma.exportBatch.count(),
+      prisma.vendor.count(),
+      prisma.purchaseOrder.count(),
+      prisma.goodsReceipt.count(),
       prisma.user.findMany({
         take: 6,
         orderBy: { createdAt: 'desc' },
@@ -27,6 +39,9 @@ export async function getAdminOverview(req, res) {
       totalOrgs,
       totalInvoices,
       totalExports,
+      totalVendors,
+      totalPurchaseOrders,
+      totalGoodsReceipts,
       recentUsers,
     });
   } catch (error) {

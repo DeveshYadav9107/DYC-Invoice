@@ -1,17 +1,19 @@
 // ─────────────────────────────────────────────────────────────────
 // Invoice Processing Pipeline & CRUD Service
+// Integrated with PO-based Three-Way Verification Engine
 // ─────────────────────────────────────────────────────────────────
 
 import prisma from '../utils/prisma.js';
 import Decimal from 'decimal.js';
 import { getInvoiceFileBuffer } from './azureBlobStorage.js';
 import { analyzeInvoiceDocument } from './documentExtraction.js';
-import { validateInvoiceData } from './invoiceValidation.js';
+import { runThreeWayVerification } from './threeWayVerification.js';
 import { normalizeKey } from '../utils/helpers.js';
 import { createAuditLog } from './auditLogService.js';
 
 /**
- * Executes the full invoice processing lifecycle: OCR + Classification + Validation.
+ * Executes the full invoice processing lifecycle:
+ * OCR Document Extraction -> PO/Vendor Auto-Matching -> Three-Way Verification.
  */
 export async function processUploadedInvoice(invoiceId, fileBuffer = null) {
   try {
@@ -37,14 +39,44 @@ export async function processUploadedInvoice(invoiceId, fileBuffer = null) {
       classificationStatus = 'NOT_AN_INVOICE';
     }
 
-    // 5. Run validation rules
-    const validationResult = await validateInvoiceData(
-      extracted,
-      invoice.organizationId,
-      invoiceId
-    );
+    // 5. Auto-associate Purchase Order and Vendor if identified
+    let matchedPoId = invoice.purchaseOrderId || null;
+    let matchedVendorId = invoice.vendorId || null;
 
-    // 6. Persist extracted data, line items, and issues in a transaction
+    if (!matchedPoId && extracted.purchaseOrderNumber) {
+      const foundPo = await prisma.purchaseOrder.findFirst({
+        where: {
+          organizationId: invoice.organizationId,
+          poNumber: { equals: extracted.purchaseOrderNumber.trim(), mode: 'insensitive' },
+        },
+      });
+
+      if (foundPo) {
+        matchedPoId = foundPo.id;
+        if (!matchedVendorId) {
+          matchedVendorId = foundPo.vendorId;
+        }
+      }
+    }
+
+    if (!matchedVendorId && extracted.vendorName) {
+      const normVendor = normalizeKey(extracted.vendorName);
+      const foundVendor = await prisma.vendor.findFirst({
+        where: {
+          organizationId: invoice.organizationId,
+          OR: [
+            { normalizedName: normVendor },
+            extracted.vendorTaxNumber ? { taxNumber: extracted.vendorTaxNumber.trim() } : { id: 'none' },
+          ],
+        },
+      });
+
+      if (foundVendor) {
+        matchedVendorId = foundVendor.id;
+      }
+    }
+
+    // 6. Persist extracted fields & line items in a transaction
     await prisma.$transaction(async (tx) => {
       // Clear previous line items and issues
       await tx.invoiceLineItem.deleteMany({ where: { invoiceId } });
@@ -64,26 +96,14 @@ export async function processUploadedInvoice(invoiceId, fileBuffer = null) {
         });
       }
 
-      // Save validation issues
-      if (validationResult.issues.length > 0) {
-        await tx.validationIssue.createMany({
-          data: validationResult.issues.map((iss) => ({
-            invoiceId,
-            code: iss.code,
-            field: iss.field || null,
-            severity: iss.severity,
-            message: iss.message,
-          })),
-        });
-      }
-
-      // Update invoice record
+      // Update invoice record with extracted fields & linked IDs
       await tx.invoice.update({
         where: { id: invoiceId },
         data: {
           processingStatus: 'COMPLETED',
           classificationStatus,
-          validationStatus: validationResult.status,
+          vendorId: matchedVendorId,
+          purchaseOrderId: matchedPoId,
           vendorName: extracted.vendorName,
           normalizedVendorName: normalizeKey(extracted.vendorName),
           vendorAddress: extracted.vendorAddress,
@@ -105,6 +125,9 @@ export async function processUploadedInvoice(invoiceId, fileBuffer = null) {
       });
     });
 
+    // 7. Run authoritative Three-Way Verification against PO and GR
+    await runThreeWayVerification(invoiceId);
+
     return { success: true };
   } catch (error) {
     console.error(`Error processing invoice ${invoiceId}:`, error);
@@ -121,54 +144,148 @@ export async function processUploadedInvoice(invoiceId, fileBuffer = null) {
 }
 
 /**
- * Re-validates an existing invoice with the rule engine.
+ * Re-runs Three-Way Verification for an existing invoice against PO + GR.
  */
 export async function revalidateInvoice(invoiceId, user) {
+  const result = await runThreeWayVerification(invoiceId, user);
+  return { validationStatus: result.overallStatus, issues: result.issues, details: result };
+}
+
+/**
+ * Links an invoice to a specific Purchase Order and automatically triggers 3-way verification.
+ */
+export async function linkInvoiceToPurchaseOrder(invoiceId, purchaseOrderId, user) {
+  const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
+  if (!invoice) throw new Error('Invoice not found.');
+
+  const po = await prisma.purchaseOrder.findFirst({
+    where: {
+      id: purchaseOrderId,
+      organizationId: invoice.organizationId,
+    },
+    include: { vendor: true },
+  });
+
+  if (!po) {
+    throw new Error('Purchase Order not found or not in your organization.');
+  }
+
+  // Update invoice with PO link and PO vendor
+  await prisma.invoice.update({
+    where: { id: invoiceId },
+    data: {
+      purchaseOrderId: po.id,
+      purchaseOrderNumber: po.poNumber,
+      vendorId: po.vendorId,
+      ...(po.vendor?.name && !invoice.vendorName ? {
+        vendorName: po.vendor.name,
+        normalizedVendorName: normalizeKey(po.vendor.name),
+      } : {}),
+    },
+  });
+
+  await createAuditLog({
+    organizationId: invoice.organizationId,
+    actorId: user?.id,
+    entityType: 'INVOICE',
+    entityId: invoiceId,
+    action: 'LINKED_PURCHASE_ORDER',
+    metadata: { poId: po.id, poNumber: po.poNumber },
+  });
+
+  return await runThreeWayVerification(invoiceId, user);
+}
+
+/**
+ * Maps invoice line items to PO lines and re-runs verification.
+ */
+export async function mapInvoiceLineItems(invoiceId, lineMappings, user) {
   const invoice = await prisma.invoice.findUnique({
     where: { id: invoiceId },
     include: { lineItems: true },
   });
 
-  if (!invoice) {
-    throw new Error('Invoice not found.');
-  }
-
-  const result = await validateInvoiceData(
-    {
-      vendorName: invoice.vendorName,
-      invoiceNumber: invoice.invoiceNumber,
-      invoiceDate: invoice.invoiceDate,
-      dueDate: invoice.dueDate,
-      subtotal: invoice.subtotal,
-      taxAmount: invoice.taxAmount,
-      discountAmount: invoice.discountAmount,
-      additionalCharges: invoice.additionalCharges,
-      totalAmount: invoice.totalAmount,
-      lineItems: invoice.lineItems,
-    },
-    invoice.organizationId,
-    invoice.id
-  );
+  if (!invoice) throw new Error('Invoice not found.');
 
   await prisma.$transaction(async (tx) => {
-    await tx.validationIssue.deleteMany({ where: { invoiceId } });
-
-    if (result.issues.length > 0) {
-      await tx.validationIssue.createMany({
-        data: result.issues.map((iss) => ({
-          invoiceId,
-          code: iss.code,
-          field: iss.field || null,
-          severity: iss.severity,
-          message: iss.message,
-        })),
-      });
+    for (const mapping of lineMappings) {
+      if (mapping.invoiceLineId) {
+        await tx.invoiceLineItem.update({
+          where: { id: mapping.invoiceLineId },
+          data: {
+            poLineId: mapping.poLineId || null,
+            itemId: mapping.itemId || null,
+          },
+        });
+      }
     }
+  });
 
+  await createAuditLog({
+    organizationId: invoice.organizationId,
+    actorId: user?.id,
+    entityType: 'INVOICE',
+    entityId: invoiceId,
+    action: 'MAPPED_LINE_ITEMS',
+    metadata: { mappingsCount: lineMappings.length },
+  });
+
+  return await runThreeWayVerification(invoiceId, user);
+}
+
+/**
+ * Admin manual override/approval for an invoice with exceptions.
+ */
+export async function overrideInvoiceException(invoiceId, overrideReason, user) {
+  if (user?.role !== 'ADMIN') {
+    throw new Error('Only administrators can approve or override invoice exceptions.');
+  }
+
+  if (!overrideReason || !overrideReason.trim()) {
+    throw new Error('An audit reason is required to override verification exceptions.');
+  }
+
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: invoiceId },
+  });
+
+  if (!invoice) throw new Error('Invoice not found.');
+
+  await prisma.$transaction(async (tx) => {
     await tx.invoice.update({
       where: { id: invoiceId },
       data: {
-        validationStatus: result.status,
+        validationStatus: 'MATCHED',
+        verificationSummary: {
+          ...(invoice.verificationSummary || {}),
+          overallStatus: 'MATCHED',
+          isOverridden: true,
+          overrideReason: overrideReason.trim(),
+          overriddenBy: user.id,
+          overriddenAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    await tx.invoiceVerification.create({
+      data: {
+        invoiceId,
+        purchaseOrderId: invoice.purchaseOrderId,
+        performedById: user.id,
+        overallStatus: 'MATCHED',
+        vendorMatch: true,
+        poMatch: true,
+        quantityMatch: true,
+        priceMatch: true,
+        taxMatch: true,
+        duplicateCheck: true,
+        discrepancyCount: 0,
+        overrideReason: overrideReason.trim(),
+        details: {
+          note: 'Manually approved / overridden by administrator.',
+          overrideReason: overrideReason.trim(),
+          overriddenBy: user.email,
+        },
       },
     });
   });
@@ -177,16 +294,16 @@ export async function revalidateInvoice(invoiceId, user) {
     organizationId: invoice.organizationId,
     actorId: user.id,
     entityType: 'INVOICE',
-    entityId: invoice.id,
-    action: 'REVALIDATED',
-    metadata: { newStatus: result.status, issuesCount: result.issues.length },
+    entityId: invoiceId,
+    action: 'EXCEPTION_OVERRIDDEN',
+    metadata: { overrideReason: overrideReason.trim() },
   });
 
-  return { validationStatus: result.status, issues: result.issues };
+  return { success: true, validationStatus: 'MATCHED' };
 }
 
 /**
- * Applies manual corrections and updates validation status accordingly.
+ * Applies manual corrections to header/amounts and triggers 3-way re-verification.
  */
 export async function updateInvoiceCorrections(invoiceId, body, user) {
   const invoice = await prisma.invoice.findUnique({
@@ -210,10 +327,12 @@ export async function updateInvoiceCorrections(invoiceId, body, user) {
   if (body.invoiceDate !== undefined) updateData.invoiceDate = body.invoiceDate ? new Date(body.invoiceDate) : null;
   if (body.dueDate !== undefined) updateData.dueDate = body.dueDate ? new Date(body.dueDate) : null;
   if (body.currency !== undefined) updateData.currency = body.currency?.trim() || 'USD';
+  if (body.purchaseOrderId !== undefined) updateData.purchaseOrderId = body.purchaseOrderId || null;
 
   if (body.subtotal !== undefined) updateData.subtotal = body.subtotal ? new Decimal(body.subtotal) : null;
   if (body.taxAmount !== undefined) updateData.taxAmount = body.taxAmount ? new Decimal(body.taxAmount) : null;
   if (body.discountAmount !== undefined) updateData.discountAmount = body.discountAmount ? new Decimal(body.discountAmount) : null;
+  if (body.additionalCharges !== undefined) updateData.additionalCharges = body.additionalCharges ? new Decimal(body.additionalCharges) : null;
   if (body.totalAmount !== undefined) updateData.totalAmount = body.totalAmount ? new Decimal(body.totalAmount) : null;
 
   updateData.correctedData = {
@@ -223,33 +342,9 @@ export async function updateInvoiceCorrections(invoiceId, body, user) {
     fields: body,
   };
 
-  // Check arithmetic verification
-  const sub = updateData.subtotal !== undefined ? updateData.subtotal : invoice.subtotal || new Decimal(0);
-  const tax = updateData.taxAmount !== undefined ? updateData.taxAmount : invoice.taxAmount || new Decimal(0);
-  const disc = updateData.discountAmount !== undefined ? updateData.discountAmount : invoice.discountAmount || new Decimal(0);
-  const tot = updateData.totalAmount !== undefined ? updateData.totalAmount : invoice.totalAmount || new Decimal(0);
-
-  const calculatedTotal = new Decimal(sub || 0).plus(tax || 0).minus(disc || 0);
-  const difference = calculatedTotal.minus(tot || 0).abs();
-  const isArithmeticValid = difference.lessThan(0.02);
-
-  const finalInvNum = updateData.invoiceNumber !== undefined ? updateData.invoiceNumber : invoice.invoiceNumber;
-  const finalVendor = updateData.vendorName !== undefined ? updateData.vendorName : invoice.vendorName;
-
-  if (isArithmeticValid && finalInvNum && finalVendor) {
-    updateData.validationStatus = 'VALIDATED';
-    await prisma.validationIssue.deleteMany({
-      where: { invoiceId, code: 'ARITHMETIC_MISMATCH' },
-    });
-  }
-
-  const updated = await prisma.invoice.update({
+  await prisma.invoice.update({
     where: { id: invoiceId },
     data: updateData,
-    include: {
-      lineItems: true,
-      validationIssues: true,
-    },
   });
 
   await createAuditLog({
@@ -261,5 +356,24 @@ export async function updateInvoiceCorrections(invoiceId, body, user) {
     metadata: { fields: Object.keys(body) },
   });
 
-  return updated;
+  // Re-run 3-way verification with updated values
+  await runThreeWayVerification(invoiceId, user);
+
+  return await prisma.invoice.findUnique({
+    where: { id: invoiceId },
+    include: {
+      lineItems: true,
+      validationIssues: true,
+      vendor: true,
+      purchaseOrder: {
+        include: {
+          vendor: true,
+          lines: true,
+          goodsReceipts: {
+            include: { lines: true },
+          },
+        },
+      },
+    },
+  });
 }

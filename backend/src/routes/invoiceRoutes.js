@@ -20,6 +20,12 @@ router.get('/:id', invoiceController.getInvoiceById);
 router.patch('/:id', invoiceController.updateInvoice);
 router.delete('/:id', invoiceController.deleteInvoice);
 
+// Three-Way Verification actions
+router.post('/:id/link-po', invoiceController.linkPurchaseOrderHandler);
+router.post('/:id/map-lines', invoiceController.mapLineItemsHandler);
+router.post('/:id/override', invoiceController.overrideInvoiceHandler);
+router.get('/:id/verification', invoiceController.getInvoiceVerificationHandler);
+
 // Document stream & actions
 router.get('/:id/file', invoiceController.streamInvoiceFile);
 router.post('/:id/retry', invoiceController.retryProcessing);

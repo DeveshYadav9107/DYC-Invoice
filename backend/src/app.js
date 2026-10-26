@@ -12,6 +12,10 @@ import exportRoutes from './routes/exportRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
+import vendorRoutes from './routes/vendorRoutes.js';
+import itemRoutes from './routes/itemRoutes.js';
+import purchaseOrderRoutes from './routes/purchaseOrderRoutes.js';
+import goodsReceiptRoutes from './routes/goodsReceiptRoutes.js';
 import { notFoundHandler, errorHandler } from './middleware/errorMiddleware.js';
 
 // Validate environment variables on startup
@@ -63,6 +67,10 @@ app.use('/api/exports', exportRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/vendors', vendorRoutes);
+app.use('/api/items', itemRoutes);
+app.use('/api/purchase-orders', purchaseOrderRoutes);
+app.use('/api/goods-receipts', goodsReceiptRoutes);
 
 // Error Handling Middleware
 app.use(notFoundHandler);

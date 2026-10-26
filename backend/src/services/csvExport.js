@@ -18,7 +18,7 @@ export function sanitizeCsvValue(val) {
 }
 
 /**
- * Generates CSV string for validated invoices.
+ * Generates CSV string for verified/matched invoices.
  */
 export function generateInvoicesCsv(invoices) {
   const headers = [
@@ -26,6 +26,7 @@ export function generateInvoicesCsv(invoices) {
     'Original File Name',
     'Vendor Name',
     'Vendor Tax ID',
+    'PO Number',
     'Invoice Number',
     'Invoice Date',
     'Due Date',
@@ -35,7 +36,7 @@ export function generateInvoicesCsv(invoices) {
     'Discount Amount',
     'Total Amount',
     'Line Items Count',
-    'Validation Status',
+    'Verification Status',
     'Export Timestamp',
   ];
 
@@ -45,8 +46,9 @@ export function generateInvoicesCsv(invoices) {
     return [
       sanitizeCsvValue(inv.id),
       sanitizeCsvValue(inv.originalFileName),
-      sanitizeCsvValue(inv.vendorName),
-      sanitizeCsvValue(inv.vendorTaxNumber),
+      sanitizeCsvValue(inv.vendor?.name || inv.vendorName),
+      sanitizeCsvValue(inv.vendor?.taxNumber || inv.vendorTaxNumber),
+      sanitizeCsvValue(inv.purchaseOrder?.poNumber || inv.purchaseOrderNumber),
       sanitizeCsvValue(inv.invoiceNumber),
       inv.invoiceDate ? new Date(inv.invoiceDate).toISOString().slice(0, 10) : '',
       inv.dueDate ? new Date(inv.dueDate).toISOString().slice(0, 10) : '',
