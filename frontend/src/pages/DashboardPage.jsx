@@ -43,9 +43,12 @@ export default function DashboardPage() {
   }, []);
 
   const totalCount = data.counts.total || 0;
-  const validatedCount = data.counts.validated || 0;
-  const needsReviewCount = data.counts.needsReview || 0;
-  const processingCount = data.counts.processing || 0;
+  const matchedCount = data.counts.matched ?? data.counts.validated ?? 0;
+  const mismatchedCount = data.counts.mismatched || 0;
+  const needsPoSelectionCount = data.counts.needsPoSelection || 0;
+  const purchaseOrdersCount = data.counts.purchaseOrders || 0;
+  const goodsReceiptsCount = data.counts.goodsReceipts || 0;
+  const vendorsCount = data.counts.vendors || 0;
   const totalValidatedAmount = data.totalAmount || 0;
   const recentInvoices = data.recentInvoices || [];
   const statusDistribution = data.statusDistribution || [];
@@ -53,33 +56,49 @@ export default function DashboardPage() {
 
   const statCards = [
     {
-      title: 'Total Invoices',
-      value: totalCount.toLocaleString(),
-      subtext: `${processingCount} currently processing`,
-      iconName: 'FileText',
-      color: 'from-blue-500 to-indigo-600',
-      lightBg: 'bg-blue-50 text-blue-600',
-    },
-    {
-      title: 'Validated & Clean',
-      value: validatedCount.toLocaleString(),
-      subtext: totalCount > 0 ? `${Math.round((validatedCount / totalCount) * 100)}% accuracy rate` : 'Ready for export',
+      title: '3-Way Matched',
+      value: matchedCount.toLocaleString(),
+      subtext: totalCount > 0 ? `${Math.round((matchedCount / totalCount) * 100)}% verification rate` : 'Ready for payment & export',
       iconName: 'CheckCircle2',
       color: 'from-emerald-500 to-teal-600',
       lightBg: 'bg-emerald-50 text-emerald-600',
     },
     {
-      title: 'Needs Review',
-      value: needsReviewCount.toLocaleString(),
-      subtext: needsReviewCount > 0 ? 'Requires attention' : 'No pending discrepancies',
+      title: 'Exceptions & Mismatch',
+      value: mismatchedCount.toLocaleString(),
+      subtext: mismatchedCount > 0 ? 'Requires attention / override' : 'Zero discrepancies detected',
       iconName: 'AlertTriangle',
-      color: 'from-amber-500 to-orange-600',
-      lightBg: 'bg-amber-50 text-amber-600',
+      color: 'from-rose-500 to-rose-600',
+      lightBg: 'bg-rose-50 text-rose-600',
     },
     {
-      title: 'Validated Value',
+      title: 'Needs PO Selection',
+      value: needsPoSelectionCount.toLocaleString(),
+      subtext: 'Invoices pending PO linkage',
+      iconName: 'Link2',
+      color: 'from-purple-500 to-purple-600',
+      lightBg: 'bg-purple-50 text-purple-600',
+    },
+    {
+      title: 'Purchase Orders',
+      value: purchaseOrdersCount.toLocaleString(),
+      subtext: `${goodsReceiptsCount} Goods Receipts (GR) recorded`,
+      iconName: 'PackageCheck',
+      color: 'from-blue-500 to-indigo-600',
+      lightBg: 'bg-blue-50 text-blue-600',
+    },
+    {
+      title: 'Master Vendors',
+      value: vendorsCount.toLocaleString(),
+      subtext: 'Approved vendor catalog',
+      iconName: 'Users',
+      color: 'from-indigo-500 to-indigo-600',
+      lightBg: 'bg-indigo-50 text-indigo-600',
+    },
+    {
+      title: 'Verified Commercial Value',
       value: formatCurrency(totalValidatedAmount, 'USD'),
-      subtext: 'Cumulative processed value',
+      subtext: 'Total matched invoice value',
       iconName: 'TrendingUp',
       color: 'from-brand-500 to-brand-700',
       lightBg: 'bg-brand-50 text-brand-600',
@@ -104,7 +123,7 @@ export default function DashboardPage() {
             Welcome back, {user?.name || 'there'}!
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Here is what is happening across {user?.organization?.name || 'your workspace'} today.
+            Three-way invoice verification, Purchase Orders, and Goods Receipts overview.
           </p>
         </div>
 
@@ -112,7 +131,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ─── Metric KPI Cards ───────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {statCards.map((card) => (
           <Card key={card.title} hover className="relative overflow-hidden p-6">
             <div className="flex items-center justify-between">
@@ -141,18 +160,18 @@ export default function DashboardPage() {
           <div className="space-y-2 max-w-xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-brand-300 text-xs font-semibold backdrop-blur-sm">
               <Icon name="Sparkles" className="w-3.5 h-3.5" />
-              Automated Verification Pipeline
+              PO-Based Three-Way Verification Engine
             </div>
             <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-              AI Document Intelligence + Rule Engine
+              Purchase Order • Goods Receipt (GRN) • Invoice
             </h2>
             <p className="text-sm text-navy-200 leading-relaxed">
-              Every document is extracted with Azure AI, mathematically cross-checked against tax and line totals, and flagged for discrepancies before CSV export.
+              Every invoice is cross-checked against agreed Purchase Order prices and cumulative warehouse Goods Receipts. Billed quantities cannot exceed accepted quantities without administrative override.
             </p>
           </div>
           <Link to="/invoices/upload" className="flex-shrink-0">
             <span className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white text-navy-900 hover:bg-gray-100 transition-colors shadow-sm">
-              Start New Upload
+              Upload & Verify Invoice
               <Icon name="ArrowRight" className="w-4 h-4" />
             </span>
           </Link>
@@ -174,7 +193,7 @@ export default function DashboardPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <h3 className="text-base font-semibold text-navy-900">Recent Invoices</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Latest documents submitted to the processing queue</p>
+            <p className="text-xs text-gray-500 mt-0.5">Latest documents submitted for 3-way verification</p>
           </div>
           {totalCount > 0 && (
             <Link
@@ -196,7 +215,7 @@ export default function DashboardPage() {
                 </div>
                 <h3 className="text-lg font-semibold text-navy-900 mb-2">No invoices uploaded yet</h3>
                 <p className="text-sm text-gray-500 max-w-sm mb-6 leading-relaxed">
-                  Upload PDF or image invoices to test Azure AI extraction, automated validation checks, and CSV generation.
+                  Upload PDF or image invoices to test Azure AI extraction, automated 3-way matching checks, and CSV export.
                 </p>
                 <Link to="/invoices/upload">
                   <span className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-brand-600 to-brand-700 hover:from-brand-500 hover:to-brand-600 text-white shadow-sm transition-all">
@@ -214,9 +233,10 @@ export default function DashboardPage() {
                     <th className="py-3 px-6">File Name</th>
                     <th className="py-3 px-6">Vendor</th>
                     <th className="py-3 px-6">Invoice #</th>
+                    <th className="py-3 px-6">PO #</th>
                     <th className="py-3 px-6">Date</th>
                     <th className="py-3 px-6 text-right">Amount</th>
-                    <th className="py-3 px-6">Validation</th>
+                    <th className="py-3 px-6">3-Way Match</th>
                     <th className="py-3 px-6 text-right">Action</th>
                   </tr>
                 </thead>
@@ -236,6 +256,9 @@ export default function DashboardPage() {
                         </td>
                         <td className="py-3.5 px-6 text-gray-500 font-mono text-xs">
                           {inv.invoiceNumber || '—'}
+                        </td>
+                        <td className="py-3.5 px-6 text-gray-500 font-mono text-xs">
+                          {inv.poNumber || '—'}
                         </td>
                         <td className="py-3.5 px-6 text-gray-500 text-xs">
                           {formatDate(inv.invoiceDate || inv.createdAt)}

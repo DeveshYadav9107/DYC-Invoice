@@ -15,6 +15,11 @@ import SettingsPage from '../pages/SettingsPage';
 import AdminOverviewPage from '../pages/admin/AdminOverviewPage';
 import AdminUsersPage from '../pages/admin/AdminUsersPage';
 import AdminOrganizationsPage from '../pages/admin/AdminOrganizationsPage';
+import AdminVendorsPage from '../pages/admin/AdminVendorsPage';
+import AdminItemsPage from '../pages/admin/AdminItemsPage';
+import AdminPurchaseOrdersPage from '../pages/admin/AdminPurchaseOrdersPage';
+import AdminPurchaseOrderDetailPage from '../pages/admin/AdminPurchaseOrderDetailPage';
+import AdminGoodsReceiptsPage from '../pages/admin/AdminGoodsReceiptsPage';
 import { Loader2 } from 'lucide-react';
 
 function FullPageLoading() {
@@ -93,9 +98,14 @@ export default function AppRoutes() {
           <Route path="/exports" element={<ExportsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
 
-          {/* Admin routes */}
+          {/* Admin Master Data & PO/GR modules */}
           <Route element={<AdminRoute />}>
             <Route path="/admin" element={<AdminOverviewPage />} />
+            <Route path="/admin/vendors" element={<AdminVendorsPage />} />
+            <Route path="/admin/items" element={<AdminItemsPage />} />
+            <Route path="/admin/purchase-orders" element={<AdminPurchaseOrdersPage />} />
+            <Route path="/admin/purchase-orders/:id" element={<AdminPurchaseOrderDetailPage />} />
+            <Route path="/admin/goods-receipts" element={<AdminGoodsReceiptsPage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/admin/organizations" element={<AdminOrganizationsPage />} />
           </Route>

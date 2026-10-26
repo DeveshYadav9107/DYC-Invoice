@@ -6,18 +6,20 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import InvoiceReviewForm from '../components/invoices/InvoiceReviewForm';
+import ThreeWayVerificationView from '../components/invoices/ThreeWayVerificationView';
 import Card, { CardHeader, CardBody } from '../components/ui/Card';
 import Icon from '../components/ui/Icon';
 import InvoiceDetailActions from '../components/invoices/InvoiceDetailActions';
 import { formatFileSize, formatDate } from '../utils/helpers';
 import api, { getApiUrl } from '../api/client';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ShieldCheck, Edit3 } from 'lucide-react';
 
 export default function InvoiceDetailPage() {
   const { id } = useParams();
   const [invoice, setInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('verification');
 
   useEffect(() => {
     async function loadInvoice() {
@@ -134,11 +136,46 @@ export default function InvoiceDetailPage() {
           </CardBody>
         </Card>
 
-        {/* ─── Right: Extracted Fields & Review Form ──────────── */}
-        <InvoiceReviewForm
-          invoice={invoice}
-          onInvoiceUpdated={(updated) => setInvoice(updated)}
-        />
+        {/* ─── Right: 3-Way Verification / Extracted Fields ─────── */}
+        <div className="space-y-4">
+          {/* View Tab Switcher */}
+          <div className="flex items-center gap-2 p-1 bg-gray-100/80 rounded-2xl w-fit">
+            <button
+              onClick={() => setActiveTab('verification')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'verification'
+                  ? 'bg-white text-navy-900 shadow-sm'
+                  : 'text-gray-500 hover:text-navy-900'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4 text-brand-600" />
+              Three-Way Verification
+            </button>
+            <button
+              onClick={() => setActiveTab('form')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'form'
+                  ? 'bg-white text-navy-900 shadow-sm'
+                  : 'text-gray-500 hover:text-navy-900'
+              }`}
+            >
+              <Edit3 className="w-4 h-4 text-brand-600" />
+              Edit Extracted Data
+            </button>
+          </div>
+
+          {activeTab === 'verification' ? (
+            <ThreeWayVerificationView
+              invoice={invoice}
+              onInvoiceUpdated={(updated) => setInvoice(updated)}
+            />
+          ) : (
+            <InvoiceReviewForm
+              invoice={invoice}
+              onInvoiceUpdated={(updated) => setInvoice(updated)}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

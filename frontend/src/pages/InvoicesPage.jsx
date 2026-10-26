@@ -87,12 +87,16 @@ export default function InvoicesPage() {
   const invoices = data.invoices || [];
   const total = data.total || 0;
   const totalPages = data.totalPages || 1;
-  const validatedInvoices = invoices.filter((inv) => inv.validationStatus === 'VALIDATED');
+  const validatedInvoices = invoices.filter(
+    (inv) => inv.validationStatus === 'MATCHED' || inv.validationStatus === 'VALIDATED'
+  );
   const validatedIds = validatedInvoices.map((inv) => inv.id);
 
   const statusTabs = [
     { label: 'All Invoices', value: 'ALL' },
-    { label: 'Validated', value: 'VALIDATED' },
+    { label: '3-Way Matched', value: 'MATCHED' },
+    { label: 'Exceptions & Mismatch', value: 'MISMATCH' },
+    { label: 'Needs PO Selection', value: 'NEEDS_PO_SELECTION' },
     { label: 'Needs Review', value: 'NEEDS_REVIEW' },
     { label: 'Pending', value: 'PENDING' },
   ];
@@ -106,7 +110,7 @@ export default function InvoicesPage() {
             Invoices
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Browse, inspect, and export verified invoices across the system.
+            Browse, inspect, and export verified invoices across the 3-way matching engine.
           </p>
         </div>
 
@@ -205,7 +209,7 @@ export default function InvoicesPage() {
                     : 'All invoices submitted to the system will appear here.'}
                 </p>
                 <p className="text-xs text-gray-400">
-                  Verified invoices with status VALIDATED can be downloaded directly as CSV spreadsheets.
+                  Verified invoices with status MATCHED or VALIDATED can be downloaded directly as CSV spreadsheets.
                 </p>
               </div>
             </div>
@@ -217,9 +221,10 @@ export default function InvoicesPage() {
                     <th className="py-3 px-6">Document</th>
                     <th className="py-3 px-6">Vendor</th>
                     <th className="py-3 px-6">Invoice #</th>
+                    <th className="py-3 px-6">PO #</th>
                     <th className="py-3 px-6">Date</th>
                     <th className="py-3 px-6 text-right">Total Amount</th>
-                    <th className="py-3 px-6">Validation</th>
+                    <th className="py-3 px-6">3-Way Match</th>
                     <th className="py-3 px-6">Issues</th>
                     <th className="py-3 px-6 text-right">Actions</th>
                   </tr>
@@ -228,7 +233,7 @@ export default function InvoicesPage() {
                   {invoices.map((inv) => {
                     const statusBadge = getStatusBadgeProps(inv.validationStatus);
                     const issuesCount = inv._count?.validationIssues || (inv.validationIssues ? inv.validationIssues.length : 0);
-                    const isValidated = inv.validationStatus === 'VALIDATED';
+                    const isMatchedOrValidated = inv.validationStatus === 'MATCHED' || inv.validationStatus === 'VALIDATED';
 
                     return (
                       <tr
@@ -236,18 +241,30 @@ export default function InvoicesPage() {
                         className="hover:bg-gray-50/80 transition-colors group"
                       >
                         <td className="py-3.5 px-6">
-                          <div className="flex items-center gap-2.5 max-w-[220px]">
+                          <div className="flex items-center gap-2.5 max-w-[200px]">
                             <Icon name="FileText" className="w-4 h-4 text-brand-600 flex-shrink-0" />
                             <span className="font-medium text-navy-900 truncate" title={inv.originalFileName}>
                               {inv.originalFileName}
                             </span>
                           </div>
                         </td>
-                        <td className="py-3.5 px-6 text-gray-700 truncate max-w-[160px]">
-                          {inv.vendorName || <span className="text-gray-400 italic">Unassigned</span>}
+                        <td className="py-3.5 px-6 text-gray-700 truncate max-w-[150px]">
+                          {inv.vendor?.name || inv.vendorName || <span className="text-gray-400 italic">Unassigned</span>}
                         </td>
                         <td className="py-3.5 px-6 font-mono text-xs text-gray-600">
                           {inv.invoiceNumber || '—'}
+                        </td>
+                        <td className="py-3.5 px-6 font-mono text-xs">
+                          {inv.purchaseOrder ? (
+                            <Link
+                              to={`/admin/purchase-orders/${inv.purchaseOrder.id}`}
+                              className="text-brand-600 hover:underline font-semibold"
+                            >
+                              {inv.purchaseOrder.poNumber}
+                            </Link>
+                          ) : (
+                            <span className="text-gray-400">None</span>
+                          )}
                         </td>
                         <td className="py-3.5 px-6 text-xs text-gray-500">
                           {formatDate(inv.invoiceDate || inv.createdAt)}
@@ -272,7 +289,7 @@ export default function InvoicesPage() {
                         </td>
                         <td className="py-3.5 px-6 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            {isValidated && (
+                            {isMatchedOrValidated && (
                               <ExportSingleInvoiceButton
                                 invoiceId={inv.id}
                                 invoiceNumber={inv.invoiceNumber}

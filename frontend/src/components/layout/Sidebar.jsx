@@ -19,6 +19,10 @@ import {
   Menu,
   X,
   Shield,
+  Building2,
+  Package,
+  ClipboardList,
+  PackageCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -51,9 +55,33 @@ const navItems = [
 
 const adminItems = [
   {
-    label: 'Admin Panel',
+    label: 'Overview',
     href: '/admin',
     icon: Shield,
+    adminOnly: true,
+  },
+  {
+    label: 'Vendors',
+    href: '/admin/vendors',
+    icon: Building2,
+    adminOnly: true,
+  },
+  {
+    label: 'Items & SKU',
+    href: '/admin/items',
+    icon: Package,
+    adminOnly: true,
+  },
+  {
+    label: 'Purchase Orders',
+    href: '/admin/purchase-orders',
+    icon: ClipboardList,
+    adminOnly: true,
+  },
+  {
+    label: 'Goods Receipts',
+    href: '/admin/goods-receipts',
+    icon: PackageCheck,
     adminOnly: true,
   },
   {

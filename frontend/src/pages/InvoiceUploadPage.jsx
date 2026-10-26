@@ -2,12 +2,13 @@
 // Invoices Upload Page — Drag-and-drop invoice upload interface
 // ─────────────────────────────────────────────────────────────────
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import Card, { CardBody } from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import { formatFileSize } from '../utils/helpers';
+import Badge, { getStatusBadgeProps } from '../components/ui/Badge';
+import { formatFileSize, formatCurrency } from '../utils/helpers';
 import api from '../api/client';
 import {
   Upload,
@@ -18,6 +19,7 @@ import {
   CheckCircle2,
   ArrowRight,
   ShieldAlert,
+  Link2,
 } from 'lucide-react';
 
 const ACCEPTED_TYPES = [
@@ -39,7 +41,27 @@ export default function InvoiceUploadPage() {
   const [uploadResults, setUploadResults] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
 
+  // PO selection for 3-way matching
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [selectedPoId, setSelectedPoId] = useState('');
+  const [loadingPos, setLoadingPos] = useState(false);
+
   const inputRef = useRef(null);
+
+  useEffect(() => {
+    async function loadPurchaseOrders() {
+      try {
+        setLoadingPos(true);
+        const res = await api.get('/api/purchase-orders?limit=50');
+        setPurchaseOrders(res.purchaseOrders || []);
+      } catch (err) {
+        console.error('Failed to load purchase orders:', err);
+      } finally {
+        setLoadingPos(false);
+      }
+    }
+    loadPurchaseOrders();
+  }, []);
 
   const handleDrag = useCallback((e) => {
     e.preventDefault();
@@ -107,6 +129,9 @@ export default function InvoiceUploadPage() {
         const file = selectedFiles[i];
         const formData = new FormData();
         formData.append('file', file);
+        if (selectedPoId) {
+          formData.append('purchaseOrderId', selectedPoId);
+        }
 
         try {
           const data = await api.post('/api/invoices', formData);
@@ -136,9 +161,41 @@ export default function InvoiceUploadPage() {
           Upload Invoices
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          Upload invoice PDFs or images to start AI extraction, classification, and validation checks.
+          Upload invoice PDFs or images to start AI extraction, classification, and 3-way verification checks.
         </p>
       </div>
+
+      {/* ─── Optional PO Link Card ─────────────────────────────── */}
+      <Card className="bg-gradient-to-r from-brand-50/50 via-white to-purple-50/30 border-brand-200/70">
+        <CardBody className="p-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-900">
+                <Link2 className="w-4 h-4 text-brand-600" />
+                Link to Purchase Order (Optional)
+              </label>
+              <p className="text-xs text-gray-500">
+                Select an approved Purchase Order upfront to automatically run 3-way matching on upload.
+              </p>
+            </div>
+
+            <div className="w-full sm:w-80">
+              <select
+                value={selectedPoId}
+                onChange={(e) => setSelectedPoId(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl text-xs font-medium border border-gray-200 bg-white focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 font-mono"
+              >
+                <option value="">— Auto-detect or link later —</option>
+                {purchaseOrders.map((po) => (
+                  <option key={po.id} value={po.id}>
+                    {po.poNumber} — {po.vendor?.name || 'Vendor'} ({formatCurrency(po.totalAmount ? Number(po.totalAmount) : 0, po.currency || 'USD')})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </CardBody>
+      </Card>
 
       {/* ─── Dropzone Card ─────────────────────────────────────── */}
       <Card>
@@ -247,7 +304,7 @@ export default function InvoiceUploadPage() {
                 {uploading && (
                   <div className="space-y-1.5 pt-2">
                     <div className="flex justify-between text-xs font-medium text-navy-700">
-                      <span>Uploading to secure storage...</span>
+                      <span>Uploading and verifying against 3-way rules...</span>
                       <span>{uploadProgress}%</span>
                     </div>
                     <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden">
@@ -266,7 +323,7 @@ export default function InvoiceUploadPage() {
                     className="w-full"
                   >
                     <Upload className="w-4 h-4 mr-1.5" />
-                    {uploading ? 'Processing uploads...' : `Upload ${selectedFiles.length} File${selectedFiles.length > 1 ? 's' : ''}`}
+                    {uploading ? 'Processing uploads & verifying...' : `Upload & Verify ${selectedFiles.length} File${selectedFiles.length > 1 ? 's' : ''}`}
                   </Button>
                 </div>
               </motion.div>
@@ -280,39 +337,54 @@ export default function InvoiceUploadPage() {
               animate={{ opacity: 1, y: 0 }}
               className="mt-6 pt-6 border-t border-gray-100 space-y-4"
             >
-              <h4 className="text-sm font-semibold text-navy-900">Upload Summary</h4>
+              <h4 className="text-sm font-semibold text-navy-900">Upload & Verification Summary</h4>
               <div className="space-y-2">
-                {uploadResults.map((res, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-center justify-between p-3.5 rounded-xl border text-sm ${
-                      res.success
-                        ? 'bg-emerald-50/60 border-emerald-100 text-emerald-900'
-                        : 'bg-rose-50/60 border-rose-100 text-rose-900'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 truncate">
-                      {res.success ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                      ) : (
-                        <ShieldAlert className="w-4 h-4 text-rose-600 flex-shrink-0" />
-                      )}
-                      <span className="font-medium truncate">{res.name}</span>
-                    </div>
+                {uploadResults.map((res, i) => {
+                  const statusProps = res.invoice ? getStatusBadgeProps(res.invoice.validationStatus) : null;
+                  return (
+                    <div
+                      key={i}
+                      className={`flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl border text-sm gap-2 ${
+                        res.success
+                          ? 'bg-emerald-50/60 border-emerald-100 text-emerald-900'
+                          : 'bg-rose-50/60 border-rose-100 text-rose-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 truncate">
+                        {res.success ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                        ) : (
+                          <ShieldAlert className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                        )}
+                        <span className="font-medium truncate">{res.name}</span>
+                        {statusProps && (
+                          <Badge variant={statusProps.variant} dot={statusProps.dot} size="sm">
+                            {statusProps.label}
+                          </Badge>
+                        )}
+                      </div>
 
-                    {res.success ? (
-                      <Link
-                        to={res.invoice ? `/invoices/${res.invoice.id}` : '/invoices'}
-                        className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 flex-shrink-0"
-                      >
-                        Review Invoice
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </Link>
-                    ) : (
-                      <span className="text-xs text-rose-600 flex-shrink-0">{res.error}</span>
-                    )}
-                  </div>
-                ))}
+                      {res.success ? (
+                        <div className="flex items-center gap-3">
+                          {res.invoice?.purchaseOrder && (
+                            <span className="text-xs text-gray-500 font-mono">
+                              PO: {res.invoice.purchaseOrder.poNumber}
+                            </span>
+                          )}
+                          <Link
+                            to={res.invoice ? `/invoices/${res.invoice.id}` : '/invoices'}
+                            className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 flex-shrink-0"
+                          >
+                            Review & Verify
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </Link>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-rose-600 flex-shrink-0">{res.error}</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="flex gap-3 pt-2">

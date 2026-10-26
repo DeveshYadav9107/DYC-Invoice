@@ -48,9 +48,13 @@ import {
   Eye,
   EyeOff,
   Check,
+  PackageCheck,
+  Link2,
 } from 'lucide-react';
 
 const iconMap = {
+  PackageCheck,
+  Link2,
   FileText,
   Upload,
   Download,

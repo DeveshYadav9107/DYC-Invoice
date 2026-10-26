@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────────
 // Badge Component — Status and category indicators
+// Extended with PO, Goods Receipt, and 3-Way Verification statuses
 // ─────────────────────────────────────────────────────────────────
 
 import { cn } from '../../utils/helpers.js';
@@ -61,25 +62,58 @@ export default function Badge({
 
 export function getStatusBadgeProps(status) {
   switch (status) {
+    case 'MATCHED':
     case 'VALIDATED':
+    case 'FULLY_RECEIVED':
     case 'COMPLETED':
-      return { variant: 'success', label: status === 'VALIDATED' ? 'Validated' : 'Completed', dot: true };
+      return {
+        variant: 'success',
+        label: status === 'MATCHED' ? '3-Way Matched' : status === 'FULLY_RECEIVED' ? 'Fully Received' : 'Completed',
+        dot: true,
+      };
+
+    case 'PARTIALLY_RECEIVED':
+      return { variant: 'warning', label: 'Partially Received', dot: true };
+
+    case 'ISSUED':
+    case 'SUBMITTED':
+      return { variant: 'brand', label: status === 'ISSUED' ? 'Issued' : 'Submitted', dot: true };
+
+    case 'NEEDS_PO_SELECTION':
+      return { variant: 'purple', label: 'Needs PO Selection', dot: true };
+
     case 'NEEDS_REVIEW':
     case 'UNCERTAIN':
       return { variant: 'warning', label: status === 'NEEDS_REVIEW' ? 'Needs Review' : 'Uncertain', dot: true };
+
+    case 'MISMATCH':
     case 'REJECTED':
     case 'FAILED':
+    case 'OVERBILLED':
+    case 'PRICE_MISMATCH':
     case 'NOT_AN_INVOICE':
       return {
         variant: 'danger',
-        label: status === 'NOT_AN_INVOICE' ? 'Not an Invoice' : status === 'REJECTED' ? 'Rejected' : 'Failed',
-        dot: false,
+        label: status === 'MISMATCH' ? 'Mismatch / Exception' : status === 'OVERBILLED' ? 'Overbilled' : status === 'PRICE_MISMATCH' ? 'Price Discrepancy' : 'Failed',
+        dot: true,
       };
+
     case 'PROCESSING':
     case 'QUEUED':
       return { variant: 'brand', label: status === 'PROCESSING' ? 'Processing…' : 'Queued', dot: true };
+
     case 'INVOICE_CANDIDATE':
       return { variant: 'info', label: 'Invoice Candidate', dot: true };
+
+    case 'DRAFT':
+      return { variant: 'default', label: 'Draft', dot: false };
+
+    case 'CLOSED':
+      return { variant: 'default', label: 'Closed', dot: false };
+
+    case 'CANCELLED':
+      return { variant: 'danger', label: 'Cancelled', dot: false };
+
     case 'UPLOADED':
     case 'PENDING':
     default:
